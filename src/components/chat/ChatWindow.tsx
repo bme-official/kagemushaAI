@@ -53,8 +53,15 @@ type ChatApiResponse = {
   nextFieldRequest: StructuredFieldRequest | null;
 };
 
-export const ChatWindow = () => {
-  const [session, setSession] = useState<ChatSessionState>(createInitialSession);
+type ChatWindowProps = {
+  sourcePage?: string;
+};
+
+export const ChatWindow = ({ sourcePage = "/contact" }: ChatWindowProps) => {
+  const [session, setSession] = useState<ChatSessionState>(() => {
+    const initial = createInitialSession();
+    return { ...initial, sourcePage };
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null

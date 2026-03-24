@@ -1,6 +1,9 @@
 export const uiConfig = {
   chatLauncherLabel: "チャットで相談する",
   chatModalTitle: "お問い合わせチャット",
+  widgetButtonLabel: "AIチャットで相談",
+  widgetModalTitle: "B'Me AI相談チャット",
+  widgetIframePath: "/embed/chat",
   initialQuestion: "どのようなご相談ですか？",
   completeMessage:
     "ありがとうございます。受付を完了しました。内容を確認のうえ担当者よりご連絡します。",
