@@ -1,11 +1,12 @@
 import { ChatWindow } from "@/components/chat/ChatWindow";
 
 type EmbeddedChatPageProps = {
-  searchParams?: { source?: string | string[] };
+  searchParams?: Promise<{ source?: string | string[] }>;
 };
 
-export default function EmbeddedChatPage({ searchParams }: EmbeddedChatPageProps) {
-  const rawSource = searchParams?.source;
+export default async function EmbeddedChatPage({ searchParams }: EmbeddedChatPageProps) {
+  const params = searchParams ? await searchParams : undefined;
+  const rawSource = params?.source;
   const source = Array.isArray(rawSource)
     ? rawSource[0] || "/embedded"
     : rawSource || "/embedded";
