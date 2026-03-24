@@ -88,7 +88,10 @@ const buildFallbackReply = (
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as ChatApiRequest;
   const session = body.session;
-  let workingSession: ChatSessionState = { ...session, collectedFields: { ...session.collectedFields } };
+  const workingSession: ChatSessionState = {
+    ...session,
+    collectedFields: { ...session.collectedFields }
+  };
 
   let userText: string | undefined;
   if (body.userInput) {
