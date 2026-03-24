@@ -1,0 +1,206 @@
+import { NextRequest, NextResponse } from "next/server";
+import { characterConfig } from "@/config/character.config";
+import { inquiryConfig } from "@/config/inquiry.config";
+import { uiConfig } from "@/config/ui.config";
+import { buildChatMessages } from "@/lib/ai/buildChatMessages";
+import { buildSystemPrompt } from "@/lib/ai/buildSystemPrompt";
+import { classifyInquiry } from "@/lib/ai/classifyInquiry";
+import { summarizeInquiry } from "@/lib/ai/summarizeInquiry";
+import { getNextFieldRequest } from "@/lib/inquiry/fieldFlow";
+import { isValidEmail, isValidPhone } from "@/lib/validation/contact";
+import type {
+  ChatAgentResult,
+  ChatApiRequest,
+  ChatSessionState,
+  CollectedContactFields,
+  ConversationMessage,
+  StructuredFieldRequest
+} from "@/types/chat";
+
+const pushMessage = (
+  messages: ConversationMessage[],
+  message: Omit<ConversationMessage, "id" | "createdAt">
+): ConversationMessage[] => {
+  return [
+    ...messages,
+    {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      ...message
+    }
+  ];
+};
+
+const callOpenAI = async (
+  session: ChatSessionState,
+  userInput?: string
+): Promise<ChatAgentResult | null> => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const messages = buildChatMessages(session, userInput);
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: buildSystemPrompt() },
+        ...messages.map((m) => ({ role: m.role, content: m.content }))
+      ],
+      temperature: 0.4
+    })
+  });
+
+  if (!response.ok) return null;
+  const data = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) return null;
+
+  try {
+    return JSON.parse(content) as ChatAgentResult;
+  } catch {
+    return null;
+  }
+};
+
+const buildFallbackReply = (
+  inputText: string | undefined,
+  collected: CollectedContactFields,
+  nextFieldRequest: StructuredFieldRequest | null
+) => {
+  if (!inputText && nextFieldRequest) {
+    return `${nextFieldRequest.label}を入力してください。`;
+  }
+  if (!inputText) return characterConfig.fallbackMessage;
+  if (!collected.inquiryBody) {
+    return "ありがとうございます。ご相談の概要をもう少し詳しく教えてください。";
+  }
+  return `ありがとうございます。内容を整理しました。${nextFieldRequest ? `${nextFieldRequest.label}を続けて入力してください。` : "送信内容の確認へ進みます。"}`;
+};
+
+export async function POST(request: NextRequest) {
+  const body = (await request.json()) as ChatApiRequest;
+  const session = body.session;
+  let workingSession: ChatSessionState = { ...session, collectedFields: { ...session.collectedFields } };
+
+  let userText: string | undefined;
+  if (body.userInput) {
+    userText = body.userInput.trim();
+    if (userText) {
+      workingSession.messages = pushMessage(workingSession.messages, {
+        role: "user",
+        kind: "text",
+        content: userText
+      });
+      if (!workingSession.collectedFields.inquiryBody && userText.length >= 10) {
+        workingSession.collectedFields.inquiryBody = userText;
+      }
+    }
+  }
+
+  if (body.fieldResponse) {
+    const { fieldName, value } = body.fieldResponse;
+    const trimmed = value.trim();
+    if (fieldName === "email" && trimmed && !isValidEmail(trimmed)) {
+      return NextResponse.json(
+        {
+          error: "invalid_email",
+          message: "メールアドレス形式が正しくありません。"
+        },
+        { status: 400 }
+      );
+    }
+    if (fieldName === "phone" && trimmed && !isValidPhone(trimmed)) {
+      return NextResponse.json(
+        {
+          error: "invalid_phone",
+          message: "電話番号形式が正しくありません。"
+        },
+        { status: 400 }
+      );
+    }
+
+    if (fieldName !== "confirmSubmit") {
+      workingSession.collectedFields[fieldName] = trimmed;
+      workingSession.messages = pushMessage(workingSession.messages, {
+        role: "user",
+        kind: "text",
+        content: `${fieldName}: ${trimmed || "(空欄)"}`
+      });
+    }
+  }
+
+  const latestText = body.userInput || body.fieldResponse?.value || "";
+  const resultFromRule = classifyInquiry({ userText: latestText });
+  workingSession.inferredIntent = workingSession.inferredIntent ?? resultFromRule.inferredIntent;
+  workingSession.inferredCategory =
+    workingSession.inferredCategory ?? resultFromRule.inferredCategory;
+  workingSession.urgency = resultFromRule.urgency;
+  workingSession.needsHuman = resultFromRule.needsHuman;
+
+  const aiResult = await callOpenAI(workingSession, userText);
+  if (aiResult) {
+    workingSession.inferredCategory = aiResult.inferredCategory;
+    workingSession.inferredIntent = aiResult.inferredIntent;
+    workingSession.urgency = aiResult.urgency;
+    workingSession.needsHuman = aiResult.needsHuman;
+    workingSession.collectedFields = {
+      ...workingSession.collectedFields,
+      ...aiResult.collectedFields
+    };
+  }
+
+  const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields);
+  const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
+    Boolean(workingSession.collectedFields[field])
+  );
+
+  if (!nextFieldRequest && hasRequired) {
+    workingSession.phase = "confirming";
+    workingSession.summaryDraft = summarizeInquiry(workingSession);
+  } else {
+    workingSession.phase = "collecting";
+  }
+
+  const assistantText =
+    aiResult?.reply ??
+    buildFallbackReply(userText, workingSession.collectedFields, nextFieldRequest);
+
+  let finalNextFieldRequest = nextFieldRequest;
+  if (workingSession.phase === "confirming") {
+    finalNextFieldRequest = {
+      kind: "field_request",
+      fieldName: "confirmSubmit",
+      inputType: "confirm",
+      label: uiConfig.confirmPrompt,
+      required: true
+    };
+  }
+
+  const assistantMessage: ConversationMessage = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    kind: "text",
+    content: assistantText,
+    createdAt: new Date().toISOString()
+  };
+
+  workingSession.messages = pushMessage(workingSession.messages, {
+    role: "assistant",
+    kind: "text",
+    content: assistantText
+  });
+
+  return NextResponse.json({
+    session: workingSession,
+    assistantMessage,
+    nextFieldRequest: finalNextFieldRequest
+  });
+}
