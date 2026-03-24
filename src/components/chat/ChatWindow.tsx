@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { characterConfig } from "@/config/character.config";
 import { uiConfig } from "@/config/ui.config";
+import { voiceConfig } from "@/config/voice.config";
 import { AvatarShell } from "@/components/avatar/AvatarShell";
 import { AvatarStatus } from "@/components/avatar/AvatarStatus";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ConversationSummary } from "@/components/chat/ConversationSummary";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StructuredFieldPrompt } from "@/components/chat/StructuredFieldPrompt";
+import { VoiceControls } from "@/components/chat/VoiceControls";
 import type {
   ChatSessionState,
   ConversationMessage,
@@ -55,19 +57,41 @@ type ChatApiResponse = {
 
 type ChatWindowProps = {
   sourcePage?: string;
+  enableVoice?: boolean;
 };
 
-export const ChatWindow = ({ sourcePage = "/contact" }: ChatWindowProps) => {
+export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: ChatWindowProps) => {
   const [session, setSession] = useState<ChatSessionState>(() => {
     const initial = createInitialSession();
     return { ...initial, sourcePage };
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [ttsEnabled, setTtsEnabled] = useState(
+    enableVoice && voiceConfig.enabled && voiceConfig.autoSpeakAssistant
+  );
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null
   );
+  const lastSpokenMessageIdRef = useRef<string | null>(null);
 
   const messages = useMemo(() => session.messages, [session.messages]);
+
+  useEffect(() => {
+    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const latestAssistant = [...messages].reverse().find((msg) => msg.role === "assistant");
+    if (!latestAssistant) return;
+    if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
+
+    lastSpokenMessageIdRef.current = latestAssistant.id;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(latestAssistant.content);
+    utterance.lang = voiceConfig.locale;
+    utterance.rate = voiceConfig.speechRate;
+    utterance.pitch = voiceConfig.speechPitch;
+    window.speechSynthesis.speak(utterance);
+  }, [enableVoice, messages, ttsEnabled]);
 
   const postChat = async (payload: {
     userInput?: string;
@@ -194,7 +218,17 @@ export const ChatWindow = ({ sourcePage = "/contact" }: ChatWindowProps) => {
           disabled={isLoading}
         />
       ) : (
-        <ChatInput onSend={handleMessageSend} disabled={isLoading} />
+        <>
+          {enableVoice ? (
+            <VoiceControls
+              disabled={isLoading}
+              onTranscript={handleMessageSend}
+              ttsEnabled={ttsEnabled}
+              onToggleTts={setTtsEnabled}
+            />
+          ) : null}
+          <ChatInput onSend={handleMessageSend} disabled={isLoading} />
+        </>
       )}
     </section>
   );
