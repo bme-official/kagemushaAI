@@ -131,7 +131,7 @@ const buildFallbackReply = (
   if (nextFieldRequest) {
     return `かしこまりました。では${nextFieldRequest.label}を教えていただけますか？`;
   }
-  return "ありがとうございます。内容を確認いたします。";
+  return "ありがとうございます。もう少し詳しくお聞かせください。打ち合わせをご希望の場合は、ご希望日時もあわせて教えてください。";
 };
 
 const applyAvatarIdentityToReply = (
@@ -291,6 +291,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  const MEETING_INTENTS = ["日程調整", "打ち合わせ希望"];
+  const isMeetingIntent = MEETING_INTENTS.some(
+    (intent) => workingSession.inferredIntent?.includes(intent)
+  );
+  // 打ち合わせ意図で日時らしき発話があれば deadline を補完する（AI の取りこぼし対策）
+  if (
+    isMeetingIntent &&
+    userText &&
+    !workingSession.collectedFields.deadline &&
+    /(今日|明日|あした|来週|再来週|午前|午後|夕方|夜|朝|\d{1,2}時|\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|\d{1,2}日)/.test(
+      userText
+    )
+  ) {
+    workingSession.collectedFields.deadline = userText;
+  }
+
   // AI が inferredIntent を確定した後に shouldCollectContact を再評価する。
   // 一般的な質問（「サービスについて教えて」など）では収集を開始しないよう、
   // 連絡先収集が必要な意図のみ対象にする。
@@ -318,12 +334,13 @@ export async function POST(request: NextRequest) {
     // AI が会話文脈から示唆したフィールドをヒントとして渡す（会話とフォームの同期）
     aiSuggestedField: aiResult?.nextFieldRequest ?? null
   });
+  // 打ち合わせ意図では連絡先入力より先に希望日時を会話で確認する。
+  // deadline は voiceOnly のため、フォーム入力は表示せず assistant 応答で案内する。
+  const shouldAskDeadlineFirst = isMeetingIntent && !workingSession.collectedFields.deadline;
+  const effectiveNextFieldRequest = shouldAskDeadlineFirst ? null : nextFieldRequest;
+
   // 日程調整・打ち合わせ意図がある場合は、希望日時（deadline）も確認してから確定フェーズへ移行する。
   // deadline は voiceOnly フィールドのためフォームは表示せず、AI が会話の中で自然に聞き出す。
-  const MEETING_INTENTS = ["日程調整", "打ち合わせ希望"];
-  const isMeetingIntent = MEETING_INTENTS.some(
-    (intent) => workingSession.inferredIntent?.includes(intent)
-  );
   const extraRequired: string[] = isMeetingIntent && !workingSession.collectedFields.deadline
     ? ["deadline"]
     : [];
@@ -343,7 +360,7 @@ export async function POST(request: NextRequest) {
 
   // confirming フェーズでは nextFieldRequest を confirmSubmit に上書きする。
   // 任意フィールドが残っていても確認画面を優先する。
-  let finalNextFieldRequest = nextFieldRequest;
+  let finalNextFieldRequest = effectiveNextFieldRequest;
   if (workingSession.phase === "confirming") {
     finalNextFieldRequest = {
       kind: "field_request",
@@ -356,10 +373,17 @@ export async function POST(request: NextRequest) {
 
   // confirming フェーズは AI の返答を使わず自前の要約を必ず使う。
   // AI がフォールバックメッセージや混乱した返答をしても安定した確認文を表示する。
-  const assistantTextRaw =
+  let assistantTextRaw =
     workingSession.phase === "confirming"
       ? buildFallbackReply(undefined, workingSession.collectedFields, finalNextFieldRequest)
       : (aiResult?.reply ?? buildFallbackReply(userText, workingSession.collectedFields, finalNextFieldRequest));
+  if (
+    workingSession.phase !== "confirming" &&
+    shouldAskDeadlineFirst &&
+    !/(日時|日程|いつ|候補|時間|ご希望)/.test(assistantTextRaw)
+  ) {
+    assistantTextRaw = "ありがとうございます。まずはご希望の日時を教えていただけますか？ あわせて打ち合わせで確認したい内容があればお知らせください。";
+  }
   const assistantText = applyAvatarIdentityToReply(assistantTextRaw, effectiveAvatarSettings);
 
   const assistantMessage: ConversationMessage = {

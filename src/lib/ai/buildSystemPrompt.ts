@@ -109,8 +109,8 @@ ${inquiryConfig.inquiryIntents.map((intent) => `- ${intent}`).join("\n")}
 
 nextFieldRequest 設定ガイド（会話とフォームを同期させるための設定）:
 - ユーザーが「打ち合わせ」「ミーティング」「日程調整」「相談したい」など具体的な行動意図を示したら、
-  その返答で必ず nextFieldRequest に {"fieldName":"name","inputType":"text","label":"お名前","required":true,"placeholder":"例) 山田 太郎"} を設定する
-- 名前が取れたら次は「email」、次に「organization」の順で設定する（絶対に null にしない）
+  まず「ご希望の日時はいつ頃でしょうか？（候補があれば複数可）」と聞き、nextFieldRequest は null にする（日時は会話で収集）
+- 打ち合わせ意図で日時（deadline）が得られた後に、name → email → organization の順で nextFieldRequest を設定する
 - 日時・用件・予算は会話で収集するため nextFieldRequest は null にする（フォームを出さない）
 - 電話番号は任意。会話で出てきた場合は collectedFields に記録し nextFieldRequest には設定しない
 - collectedFields.inquiryBody は直近のユーザー発話をそのまま入れず、会話全体から読み取れる相談の要旨を簡潔に要約した文章（例:「打ち合わせ希望（明日の夕方）」）にする

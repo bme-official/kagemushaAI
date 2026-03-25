@@ -135,6 +135,7 @@ export const VoiceControls = ({
   };
 
   const startListening = () => {
+    setUnsupportedMessage("");
     if (!hasSpeechRecognition) {
       setUnsupportedMessage("このブラウザは音声入力に対応していません。");
       return;
@@ -146,6 +147,15 @@ export const VoiceControls = ({
       setUnsupportedMessage("このブラウザは音声入力に対応していません。");
       return;
     }
+    // 既存インスタンスが残っている場合は明示的に停止してから再生成する
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      recognitionRef.current = null;
+    }
     // iOS Safari は continuous:true が不安定なため無効化し、onend で再起動する
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const recognition = new Recognition();
@@ -154,6 +164,7 @@ export const VoiceControls = ({
     recognition.maxAlternatives = 1;
     recognition.continuous = !isIOS;
     recognition.onstart = () => {
+      setUnsupportedMessage("");
       callbacksRef.current.onListeningChange?.(true);
     };
     recognition.onspeechstart = () => {
@@ -204,6 +215,7 @@ export const VoiceControls = ({
       } else if (err === "service-not-allowed") {
         // iOS: ジェスチャー外で呼ばれた可能性。自動再起動は止め、次のボタン操作を待つ
         shouldKeepListeningRef.current = false;
+        setUnsupportedMessage("マイクの開始に失敗しました。もう一度マイクボタンを押してください。");
       }
       // network / aborted / no-speech などは onend で再起動される
     };
@@ -226,6 +238,7 @@ export const VoiceControls = ({
     try {
       recognition.start();
     } catch {
+      setUnsupportedMessage("マイクを開始できませんでした。もう一度お試しください。");
       onListeningChange?.(false);
     }
   };
