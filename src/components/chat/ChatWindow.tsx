@@ -189,7 +189,9 @@ export const ChatWindow = ({
   const [viewMode, setViewMode] = useState<"voice" | "text">(enableVoice ? "voice" : "text");
   const [isListening, setIsListening] = useState(false);
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
-  const [micEnabled, setMicEnabled] = useState(enableVoice && voiceConfig.enabled && voiceConfig.sttEnabled);
+  // iOS ではジェスチャー内でのみ recognition.start() が許可されるため初期値は false。
+  // 非 iOS は useEffect で true に設定し自動起動する。
+  const [micEnabled, setMicEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
@@ -532,7 +534,12 @@ export const ChatWindow = ({
         };
         await audio.play();
       } catch {
-        if (apiCallCounterRef.current === myApiCall) handlers.onError();
+        // audio.play() が iOS 自動再生ブロックで拒否された場合、apiAudioRef をクリアする。
+        // クリアしないと unlockAudio が「再生中」と誤判定して TTS 再試行が起動しない。
+        if (apiCallCounterRef.current === myApiCall) {
+          apiAudioRef.current = null;
+          handlers.onError();
+        }
       }
     },
     [stopApiAudio]
@@ -675,6 +682,17 @@ export const ChatWindow = ({
     if (!initialAudioUnlocked || audioUnlocked) return;
     setAudioUnlocked(true);
   }, [audioUnlocked, initialAudioUnlocked]);
+
+  // 非 iOS のみマイクを自動起動する（iOS はジェスチャー要件があるためボタンタップ時に起動）
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    if (!enableVoice || !voiceConfig.enabled || !voiceConfig.sttEnabled) return;
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (!isIOS) {
+      setMicEnabled(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {

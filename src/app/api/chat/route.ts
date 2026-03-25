@@ -171,6 +171,17 @@ export async function POST(request: NextRequest) {
     collectedFields: { ...session.collectedFields }
   };
 
+  // 問い合わせ送信完了後にユーザーが新たな会話を始めた場合は、
+  // 収集済みフィールドと意図をリセットして新しい会話として扱う。
+  // これにより「他にも聞いていい？」などの発話で確認カードが再表示されなくなる。
+  if (workingSession.phase === "completed" && body.userInput) {
+    workingSession.phase = "collecting";
+    workingSession.collectedFields = {};
+    workingSession.inferredIntent = null;
+    workingSession.inferredCategory = null;
+    workingSession.summaryDraft = "";
+  }
+
   // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）。
   // ただし services / kana などがサーバー側で空の場合はクライアント送信値を保持する。
   const serverSettings = await fetchServerAvatarSettings();
