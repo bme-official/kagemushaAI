@@ -27,14 +27,7 @@ const createInitialSession = (): ChatSessionState => {
       id: crypto.randomUUID(),
       role: "assistant",
       kind: "text",
-      content: characterConfig.greeting,
-      createdAt: new Date().toISOString()
-    },
-    {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      kind: "text",
-      content: uiConfig.initialQuestion,
+      content: `${characterConfig.greeting} ${uiConfig.initialQuestion}`,
       createdAt: new Date().toISOString()
     }
   ];
@@ -228,7 +221,7 @@ export const ChatWindow = ({
     const runtimeName = parsed.avatarName || characterConfig.name;
     const primaryService = parsed.services?.find((s) => s.name)?.name;
     const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
-    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。${serviceSuffix}ご相談内容を整理しながらご案内します。`;
+    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当${runtimeName}です。${serviceSuffix}どのようなご相談でもお気軽にお聞かせください。`;
     setSession((prev) => {
       if (!prev.messages.length) return prev;
       const first = prev.messages[0];
