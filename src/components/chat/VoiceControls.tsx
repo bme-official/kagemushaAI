@@ -268,6 +268,7 @@ export const VoiceControls = ({
         borderRadius: 999,
         height: 7,
         background: "#94a3b8",
+        transformOrigin: "center",
         animation: `kagemushaBarThink 1.4s ease-in-out ${idx * 380}ms infinite`
       };
     }
@@ -318,7 +319,7 @@ export const VoiceControls = ({
       <div
         style={{
           display: "inline-flex",
-          alignItems: "flex-end",
+          alignItems: "center",
           justifyContent: "center",
           gap: 5,
           height: 20
@@ -390,8 +391,8 @@ export const VoiceControls = ({
           to   { transform: scaleY(1.9); opacity: 1; }
         }
         @keyframes kagemushaBarThink {
-          0%, 100% { opacity: 0.25; background: #e2e8f0; }
-          50%       { opacity: 1;    background: #64748b; }
+          0%, 100% { opacity: 0.3; background: #e2e8f0; transform: scaleY(0.7); }
+          50%       { opacity: 1;   background: #64748b; transform: scaleY(1.25); }
         }
       `}</style>
 

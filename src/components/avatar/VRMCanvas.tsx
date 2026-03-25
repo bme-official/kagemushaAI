@@ -31,6 +31,17 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // ネットワーク取得を最優先で開始し、Three.js セットアップと並列化する
+    let cancelled = false;
+    let objectUrl = "";
+    const fetchController = new AbortController();
+    const modelBufferPromise = fetch(modelUrl, { signal: fetchController.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error("fetch failed");
+        return r.arrayBuffer();
+      })
+      .catch(() => null);
+
     const container = containerRef.current;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
@@ -39,8 +50,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
     camera.position.set(0, 1.52, 1.28);
     camera.lookAt(0, 1.45, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
@@ -294,27 +305,51 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
     loader.register((parser) => new VRMLoaderPlugin(parser));
     setIsModelLoading(true);
     setError(null);
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        const vrm = gltf.userData.vrm as VRM;
-        VRMUtils.rotateVRM0(vrm);
-        scene.add(vrm.scene);
-        currentVrmRef.current = vrm;
-        setIsModelLoading(false);
-        setError(null);
-        onModelReadyRef.current?.();
-      },
-      undefined,
-      () => {
+
+    // fetch 完了後に ObjectURL 経由でパース（ダウンロード済みバッファを再利用）
+    void modelBufferPromise.then((buffer) => {
+      if (cancelled) return;
+      if (!buffer) {
         setIsModelLoading(false);
         setError("VRMモデルの読み込みに失敗しました。");
+        return;
       }
-    );
+      const blob = new Blob([buffer], { type: "model/gltf-binary" });
+      objectUrl = URL.createObjectURL(blob);
+      loader.load(
+        objectUrl,
+        (gltf) => {
+          if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ""; }
+          if (cancelled) return;
+          const vrm = gltf.userData.vrm as VRM;
+          // 不要ジョイント/頂点除去 + スケルトン統合でレンダリング負荷を削減
+          VRMUtils.removeUnnecessaryJoints(vrm.scene);
+          VRMUtils.removeUnnecessaryVertices(vrm.scene);
+          VRMUtils.combineSkeletons(vrm.scene);
+          VRMUtils.rotateVRM0(vrm);
+          scene.add(vrm.scene);
+          currentVrmRef.current = vrm;
+          setIsModelLoading(false);
+          setError(null);
+          onModelReadyRef.current?.();
+        },
+        undefined,
+        () => {
+          if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ""; }
+          if (!cancelled) {
+            setIsModelLoading(false);
+            setError("VRMモデルの読み込みに失敗しました。");
+          }
+        }
+      );
+    });
 
     animate();
 
     return () => {
+      cancelled = true;
+      fetchController.abort();
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = ""; }
       window.cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
       const currentVrm = currentVrmRef.current;
