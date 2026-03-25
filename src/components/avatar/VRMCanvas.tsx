@@ -60,13 +60,13 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
     ) => {
       if (!bone) return;
       if (typeof target.x === "number") {
-        bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, target.x, 0.12);
+        bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, target.x, 0.2);
       }
       if (typeof target.y === "number") {
-        bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, target.y, 0.12);
+        bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, target.y, 0.2);
       }
       if (typeof target.z === "number") {
-        bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, target.z, 0.12);
+        bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, target.z, 0.2);
       }
     };
 
@@ -165,14 +165,14 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       applyBoneRotation(neck, { x: 0, y: idleSwing * 0.25, z: 0 });
       applyBoneRotation(spine, { x: breathChest * 0.45, y: 0, z: 0 });
       applyBoneRotation(upperChest, { x: breathChest, y: 0, z: 0 });
-      applyBoneRotation(leftShoulder, { x: -0.03 - breathShoulder * 0.25, z: -0.12 });
-      applyBoneRotation(rightShoulder, { x: -0.03 - breathShoulder * 0.25, z: 0.12 });
-      applyBoneRotation(leftUpperArm, { x: -0.1, z: -1.05 });
-      applyBoneRotation(rightUpperArm, { x: -0.1, z: 1.05 });
-      applyBoneRotation(leftLowerArm, { z: -0.16 });
-      applyBoneRotation(rightLowerArm, { z: 0.16 });
-      applyBoneRotation(leftHand, { x: 0.05, y: handWave * 0.3, z: -0.08 });
-      applyBoneRotation(rightHand, { x: 0.05, y: -handWave * 0.3, z: 0.08 });
+      applyBoneRotation(leftShoulder, { x: -0.03 - breathShoulder * 0.25, z: -0.1 });
+      applyBoneRotation(rightShoulder, { x: -0.03 - breathShoulder * 0.25, z: 0.1 });
+      applyBoneRotation(leftUpperArm, { x: 0.06, z: -1.38 });
+      applyBoneRotation(rightUpperArm, { x: 0.06, z: 1.38 });
+      applyBoneRotation(leftLowerArm, { x: 0.06, z: -0.08 });
+      applyBoneRotation(rightLowerArm, { x: 0.06, z: 0.08 });
+      applyBoneRotation(leftHand, { x: 0.04, y: handWave * 0.2, z: -0.06 });
+      applyBoneRotation(rightHand, { x: 0.04, y: -handWave * 0.2, z: 0.06 });
       applyBoneRotation(leftIndex, { x: 0.1 + handWave * 0.2 });
       applyBoneRotation(rightIndex, { x: 0.1 - handWave * 0.2 });
       applyBoneRotation(leftMiddle, { x: 0.08 + handWave * 0.15 });
@@ -194,8 +194,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       }
       if (pose === "confident") {
         applyBoneRotation(spine, { x: -0.02, y: 0.02 });
-        applyBoneRotation(leftUpperArm, { x: -0.15, z: -0.92 });
-        applyBoneRotation(rightUpperArm, { x: -0.15, z: 0.92 });
+        applyBoneRotation(leftUpperArm, { x: -0.08, z: -1.18 });
+        applyBoneRotation(rightUpperArm, { x: -0.08, z: 1.18 });
       }
 
       switch (nextBehavior.gesture) {
@@ -248,8 +248,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(rightUpperArm, { x: -0.85, y: -0.18, z: 0.18 });
           applyBoneRotation(rightLowerArm, { x: -0.52, y: -0.25, z: 1.08 });
           applyBoneRotation(rightHand, { x: 0.04, y: Math.sin(elapsedSec * 5.2) * 0.42, z: 0.22 });
-          applyBoneRotation(leftUpperArm, { x: -0.04, z: -1.02 });
-          applyBoneRotation(leftLowerArm, { z: -0.14 });
+          applyBoneRotation(leftUpperArm, { x: 0.04, z: -1.35 });
+          applyBoneRotation(leftLowerArm, { x: 0.06, z: -0.08 });
           break;
         case "pointFinger":
           applyBoneRotation(head, { x: -0.02 + idleSwing * 0.25, y: -0.05 });
@@ -258,8 +258,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(rightHand, { x: 0.02, y: -0.1, z: 0.08 });
           applyBoneRotation(rightIndex, { x: -0.55 });
           applyBoneRotation(rightMiddle, { x: 0.28 });
-          applyBoneRotation(leftUpperArm, { x: -0.08, z: -1.02 });
-          applyBoneRotation(leftLowerArm, { z: -0.18 });
+          applyBoneRotation(leftUpperArm, { x: 0.04, z: -1.35 });
+          applyBoneRotation(leftLowerArm, { x: 0.06, z: -0.08 });
           break;
         default:
           break;

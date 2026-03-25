@@ -10,9 +10,11 @@ type SpeechRecognitionAlternativeLike = {
 
 type SpeechRecognitionResultLike = {
   [index: number]: SpeechRecognitionAlternativeLike;
+  isFinal?: boolean;
 };
 
 type SpeechRecognitionEventLike = Event & {
+  resultIndex?: number;
   results: {
     length: number;
     [index: number]: SpeechRecognitionResultLike;
@@ -101,7 +103,19 @@ export const VoiceControls = ({
       setIsSpeechDetected(false);
       onSpeechDetectedChange?.(false);
       speechIdleTimeoutRef.current = null;
-    }, 550);
+    }, 400);
+  };
+
+  // 雑音と判定しないよう、実際の発話テキストが取得されてから親に通知する（TTSを止める）
+  const confirmSpeechDetected = () => {
+    setIsSpeechDetected(true);
+    onSpeechDetectedChange?.(true);
+    clearSpeechIdleTimer();
+    speechIdleTimeoutRef.current = window.setTimeout(() => {
+      setIsSpeechDetected(false);
+      onSpeechDetectedChange?.(false);
+      speechIdleTimeoutRef.current = null;
+    }, 400);
   };
 
   const startListening = () => {
@@ -118,14 +132,17 @@ export const VoiceControls = ({
     }
     const recognition = new Recognition();
     recognition.lang = voiceConfig.locale;
-    recognition.interimResults = false;
+    recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
     recognition.onstart = () => {
       onListeningChange?.(true);
     };
     recognition.onspeechstart = () => {
-      markSpeechDetected();
+      // onspeechstart は雑音でも発火するため、ローカルの視覚表示のみ更新
+      // 親コンポーネント（TTS停止）への通知は実テキスト取得後に行う
+      setIsSpeechDetected(true);
+      clearSpeechIdleTimer();
     };
     recognition.onspeechend = () => {
       // 発話終了直後のブツ切れ感を避けるため、少し余韻を残して停止
@@ -134,15 +151,26 @@ export const VoiceControls = ({
         setIsSpeechDetected(false);
         onSpeechDetectedChange?.(false);
         speechIdleTimeoutRef.current = null;
-      }, 220);
+      }, 120);
     };
 
     recognition.onresult = (event) => {
-      const resultIndex = Math.max(0, (event?.results?.length ?? 1) - 1);
-      const transcript = event?.results?.[resultIndex]?.[0]?.transcript?.trim() ?? "";
-      if (transcript) {
-        markSpeechDetected();
-        onTranscript(transcript);
+      const results = event?.results;
+      if (!results) return;
+      // 新しく届いた結果のみ処理（resultIndex から末尾まで）
+      const startIdx = event.resultIndex ?? Math.max(0, results.length - 1);
+      for (let i = startIdx; i < results.length; i++) {
+        const result = results[i];
+        const transcript = result?.[0]?.transcript?.trim() ?? "";
+        if (!transcript) continue;
+        if (!result.isFinal) {
+          // 暫定テキストあり = 実際の発話を確認 → TTS停止を親に通知
+          confirmSpeechDetected();
+        } else {
+          // 確定テキスト = 通常通り処理
+          markSpeechDetected();
+          onTranscript(transcript);
+        }
       }
     };
     recognition.onerror = (event) => {
@@ -164,7 +192,7 @@ export const VoiceControls = ({
         clearRestartTimer();
         restartTimeoutRef.current = window.setTimeout(() => {
           startListening();
-        }, 250);
+        }, 80);
       }
     };
 
