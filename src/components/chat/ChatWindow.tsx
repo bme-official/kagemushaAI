@@ -192,7 +192,7 @@ export const ChatWindow = ({
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null
   );
-  const [isSelectingEditField, setIsSelectingEditField] = useState(false);
+  // isSelectingEditField は削除 — InquiryConfirmCard の editMode に移管
   const [viewMode, setViewMode] = useState<"voice" | "text">(enableVoice ? "voice" : "text");
   const [isListening, setIsListening] = useState(false);
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
@@ -757,30 +757,38 @@ export const ChatWindow = ({
   useEffect(() => {
     const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
     const fallbackExpression = detectExpression(latestAssistantMessage, session.urgency);
-    const voice: AvatarBehaviorState["voice"] = isSpeechDetected || isListening
+    // isSpeaking / isLoading を isListening より優先して状態を判定
+    // （マイクON中でもTTS再生中は speaking、API応答待ちは thinking を表示する）
+    const voice: AvatarBehaviorState["voice"] = isSpeechDetected
       ? "listening"
       : isSpeaking
         ? "speaking"
-        : "muted";
+        : isListening
+          ? "listening"
+          : "muted";
 
-    const fallbackGesture: AvatarBehaviorState["gesture"] = isSpeechDetected || isListening
+    const fallbackGesture: AvatarBehaviorState["gesture"] = isSpeechDetected
       ? "listening"
       : isLoading
         ? "thinking"
-        : isSpeaking || isListening
+        : isSpeaking
           ? fallbackExpression === "serious"
             ? "emphasis"
             : "explaining"
-          : "idle";
+          : isListening
+            ? "listening"
+            : "idle";
 
     // 表示ラベルは4状態のみ（感情ステータスは非表示・内部適用のみ）
-    const fallbackStatusLabel = isSpeechDetected || isListening
+    const fallbackStatusLabel = isSpeechDetected
       ? "listening..."
       : isSpeaking
         ? "speaking..."
         : isLoading
           ? "thinking..."
-          : "idle";
+          : isListening
+            ? "listening..."
+            : "idle";
 
     const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"
@@ -945,10 +953,6 @@ export const ChatWindow = ({
   const handleMessageSend = async (text: string) => {
     if (isLoading) return;
     conversationStartedRef.current = true;
-    if (isSelectingEditField) {
-      await handleFieldSend(text);
-      return;
-    }
     if (nextFieldRequest?.fieldName === "confirmSubmit") {
       const normalized = text.trim().toLowerCase();
       const confirmed = /^(yes|y|はい|送信|ok|お願いします)$/.test(normalized) ? "yes" : "no";
@@ -995,91 +999,37 @@ export const ChatWindow = ({
     await postChat({ userInput: text });
   };
 
+  // 「修正する」ボタンでフィールドを選択した際、そのフィールドの入力欄を表示する（API 不要）
+  const handleEditField = (fieldName: string) => {
+    const fieldMeta: Record<string, { inputType: string; label: string; placeholder?: string; required: boolean }> = {
+      organization: { inputType: "text", label: "会社名", placeholder: "例) 株式会社〇〇", required: true },
+      name: { inputType: "text", label: "お名前", placeholder: "例) 山田 太郎", required: true },
+      email: { inputType: "email", label: "メールアドレス", placeholder: "example@company.com", required: true },
+      phone: { inputType: "tel", label: "電話番号", placeholder: "09012345678", required: false },
+      deadline: { inputType: "text", label: "ご希望日時", placeholder: "例) 明日の午後3時", required: false },
+      inquiryBody: { inputType: "textarea", label: "ご相談内容", placeholder: "打ち合わせで確認したい内容", required: true },
+      budget: { inputType: "text", label: "予算", placeholder: "例) 50万円", required: false }
+    };
+    const meta = fieldMeta[fieldName];
+    if (!meta) return;
+    setNextFieldRequest({
+      kind: "field_request",
+      fieldName,
+      inputType: meta.inputType as StructuredFieldRequest["inputType"],
+      label: meta.label,
+      required: meta.required,
+      placeholder: meta.placeholder
+    });
+  };
+
   const handleFieldSend = async (value: string) => {
     if (!nextFieldRequest) return;
-
-    if (isSelectingEditField) {
-      const normalized = value.trim().toLowerCase();
-      const targetField =
-        /(会社|組織|organization)/.test(normalized)
-          ? "organization"
-          : /(名前|氏名|name)/.test(normalized)
-            ? "name"
-            : /(メール|mail|email)/.test(normalized)
-              ? "email"
-              : /(電話|phone)/.test(normalized)
-                ? "phone"
-                : /(日時|日程|deadline|時間)/.test(normalized)
-                  ? "deadline"
-                  : /(内容|相談|inquiry)/.test(normalized)
-                    ? "inquiryBody"
-                    : null;
-
-      if (!targetField) {
-        setSession((prev) => ({
-          ...prev,
-          messages: [
-            ...prev.messages,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              kind: "text",
-              content: "修正する項目を教えてください（お名前・メールアドレス・会社名・電話番号・ご希望日時・ご相談内容）。",
-              createdAt: new Date().toISOString()
-            }
-          ]
-        }));
-        return;
-      }
-
-      const fieldMeta = {
-        organization: { inputType: "text", label: "会社名", placeholder: "例) 株式会社影武者AI" },
-        name: { inputType: "text", label: "お名前", placeholder: "例) 山田 太郎" },
-        email: { inputType: "email", label: "メールアドレス", placeholder: "example@company.com" },
-        phone: { inputType: "tel", label: "電話番号", placeholder: "09012345678" },
-        deadline: { inputType: "text", label: "ご希望日時", placeholder: "例) 明日の午後3時" },
-        inquiryBody: { inputType: "textarea", label: "ご相談内容", placeholder: "打ち合わせで確認したい内容" }
-      } as const;
-      const meta = fieldMeta[targetField];
-      setIsSelectingEditField(false);
-      setNextFieldRequest({
-        kind: "field_request",
-        fieldName: targetField,
-        inputType: meta.inputType,
-        label: meta.label,
-        required: targetField === "name" || targetField === "email" || targetField === "organization",
-        placeholder: meta.placeholder
-      });
-      return;
-    }
 
     if (nextFieldRequest.fieldName === "confirmSubmit") {
       if (value === "yes") {
         await submitInquiry();
-      } else {
-        setIsSelectingEditField(true);
-        setSession((prev) => ({
-          ...prev,
-          messages: [
-            ...prev.messages,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              kind: "text",
-              content: "修正したい項目を教えてください（お名前・メールアドレス・会社名・電話番号・ご希望日時・ご相談内容）。",
-              createdAt: new Date().toISOString()
-            }
-          ]
-        }));
-        setNextFieldRequest({
-          kind: "field_request",
-          fieldName: "inquiryBody",
-          inputType: "text",
-          label: "修正したい項目",
-          required: true,
-          placeholder: "例) メールアドレス"
-        });
       }
+      // "no" は InquiryConfirmCard の editMode で処理するため何もしない
       return;
     }
 
@@ -1234,7 +1184,7 @@ export const ChatWindow = ({
             <InquiryConfirmCard
               collectedFields={session.collectedFields}
               onConfirm={() => handleFieldSend("yes")}
-              onEdit={() => handleFieldSend("no")}
+              onEditField={handleEditField}
               disabled={isLoading}
             />
           ) : (

@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import type { CollectedContactFields } from "@/types/chat";
 
 type Props = {
   collectedFields: CollectedContactFields;
   onConfirm: () => void;
-  onEdit: () => void;
+  onEditField: (fieldName: keyof CollectedContactFields) => void;
   disabled?: boolean;
 };
 
@@ -19,8 +20,93 @@ const FIELD_ORDER: Array<{ key: keyof CollectedContactFields; label: string }> =
   { key: "deadline", label: "ご希望日時" }
 ];
 
-export const InquiryConfirmCard = ({ collectedFields, onConfirm, onEdit, disabled }: Props) => {
+export const InquiryConfirmCard = ({ collectedFields, onConfirm, onEditField, disabled }: Props) => {
+  const [editMode, setEditMode] = useState(false);
   const entries = FIELD_ORDER.filter(({ key }) => Boolean(collectedFields[key]));
+
+  if (editMode) {
+    return (
+      <div
+        style={{
+          background: "#ffffff",
+          borderRadius: 10,
+          overflow: "hidden",
+          boxShadow: "0 10px 28px rgba(15,23,42,.24)"
+        }}
+      >
+        <div
+          style={{
+            padding: "10px 14px",
+            borderBottom: "1px solid #e2e8f0",
+            background: "#f8fafc"
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>
+            修正する項目を選んでください
+          </span>
+        </div>
+
+        <div
+          style={{
+            padding: "12px 14px",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 8
+          }}
+        >
+          {entries.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              disabled={disabled}
+              onClick={() => {
+                setEditMode(false);
+                onEditField(key);
+              }}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 20,
+                border: "1.5px solid #3b82f6",
+                background: "#eff6ff",
+                color: "#1d4ed8",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: disabled ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap"
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          style={{
+            padding: "8px 14px 12px",
+            borderTop: "1px solid #e2e8f0"
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setEditMode(false)}
+            style={{
+              width: "100%",
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: "#f1f5f9",
+              color: "#475569",
+              border: "none",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            キャンセル
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -105,7 +191,7 @@ export const InquiryConfirmCard = ({ collectedFields, onConfirm, onEdit, disable
         <button
           type="button"
           disabled={disabled}
-          onClick={onEdit}
+          onClick={() => setEditMode(true)}
           style={{
             padding: "9px 16px",
             borderRadius: 8,

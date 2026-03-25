@@ -351,7 +351,9 @@ export async function POST(request: NextRequest) {
   // 一般的な質問（「サービスについて教えて」など）では収集を開始しないよう、
   // 連絡先収集が必要な意図のみ対象にする。
   // name/email/organization のいずれかが収集済みなら無条件で継続する。
-  const contactFieldsStarted = Boolean(
+  // ただし completed フェーズ後のリセット直後（wasCompletedPhase）は保持した連絡先情報を
+  // 収集トリガーとして使わない（新しい意図が必要）。
+  const contactFieldsStarted = !wasCompletedPhase && Boolean(
     workingSession.collectedFields.name ||
     workingSession.collectedFields.email ||
     workingSession.collectedFields.organization

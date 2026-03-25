@@ -158,13 +158,14 @@ export const VoiceControls = ({
       }
       recognitionRef.current = null;
     }
-    // iOS Safari は continuous:true が不安定なため無効化し、onend で再起動する
+    // continuous:true にすることで onend からの再起動（ジェスチャー要件あり）を避ける。
+    // iOS でも continuous:true を使用し、セッションが自然に終了した場合のみ onend で再起動する。
     const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const recognition = new Recognition();
     recognition.lang = voiceConfig.locale;
     recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別
     recognition.maxAlternatives = 1;
-    recognition.continuous = !isIOS;
+    recognition.continuous = true; // iOS 含め continuous:true（再起動頻度を減らす）
     // 新しいセッション開始時にリセット（onend で onstart 未発火を検出するため）
     recognitionStartedRef.current = false;
     recognition.onstart = () => {
