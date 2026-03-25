@@ -103,6 +103,7 @@ export const ChatWindow = ({
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
+    pose: "neutral",
     gesture: "idle",
     voice: "muted",
     expression: "neutral",
@@ -125,9 +126,12 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handleMessage = (event: MessageEvent<{ type?: string; visible?: boolean }>) => {
+    const handleMessage = (event: MessageEvent<{ type?: string; visible?: boolean; userGesture?: boolean }>) => {
       if (event.data?.type !== "kagemusha-chat-visibility") return;
       setIsEmbedVisible(Boolean(event.data.visible));
+      if (event.data.userGesture) {
+        setAudioUnlocked(true);
+      }
     };
     window.addEventListener("message", handleMessage);
     return () => {
@@ -156,6 +160,30 @@ export const ChatWindow = ({
     }, 140);
   }, []);
 
+  const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    try {
+      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { voiceModel?: string; avatarNameKana?: string };
+      const voices = window.speechSynthesis.getVoices();
+      const voice = voices.find((item) => {
+        if (parsed.voiceModel && item.name.toLowerCase().includes(parsed.voiceModel.toLowerCase())) {
+          return true;
+        }
+        return item.lang.toLowerCase().startsWith(voiceConfig.locale.toLowerCase());
+      });
+      if (voice) {
+        utterance.voice = voice;
+      }
+      if (parsed.avatarNameKana) {
+        utterance.text = utterance.text.replace(characterConfig.name, parsed.avatarNameKana);
+      }
+    } catch {
+      // ignore malformed localStorage payload
+    }
+  }, []);
+
   const trySpeakOpeningGreeting = useCallback(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
     if (!isEmbedVisible) return;
@@ -169,6 +197,7 @@ export const ChatWindow = ({
     utterance.lang = voiceConfig.locale;
     utterance.rate = voiceConfig.speechRate;
     utterance.pitch = voiceConfig.speechPitch;
+    applyConfiguredVoice(utterance);
     utterance.onstart = () => {
       setIsSpeaking(true);
       pulseAssistantLipSync();
@@ -184,7 +213,7 @@ export const ChatWindow = ({
       setAssistantLipSyncActive(false);
     };
     window.speechSynthesis.speak(utterance);
-  }, [avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
+  }, [applyConfiguredVoice, avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
 
   const unlockAudio = () => {
     if (!audioUnlocked) {
@@ -209,6 +238,7 @@ export const ChatWindow = ({
     utterance.lang = voiceConfig.locale;
     utterance.rate = voiceConfig.speechRate;
     utterance.pitch = voiceConfig.speechPitch;
+    applyConfiguredVoice(utterance);
     utterance.onstart = () => {
       setIsSpeaking(true);
       pulseAssistantLipSync();
@@ -223,7 +253,7 @@ export const ChatWindow = ({
       setAssistantLipSyncActive(false);
     };
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
+  }, [applyConfiguredVoice, audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
@@ -233,6 +263,22 @@ export const ChatWindow = ({
   useEffect(() => {
     trySpeakOpeningGreeting();
   }, [trySpeakOpeningGreeting]);
+
+  useEffect(() => {
+    if (!enableVoice || !ttsEnabled || !isEmbedVisible || !avatarReady || hasSpokenOpeningRef.current) return;
+    let attempt = 0;
+    let retryTimer: number | null = null;
+    const tick = () => {
+      if (hasSpokenOpeningRef.current || attempt >= 6) return;
+      attempt += 1;
+      trySpeakOpeningGreeting();
+      retryTimer = window.setTimeout(tick, 700);
+    };
+    tick();
+    return () => {
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
+  }, [avatarReady, enableVoice, isEmbedVisible, trySpeakOpeningGreeting, ttsEnabled]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
@@ -282,7 +328,23 @@ export const ChatWindow = ({
             : "ご相談受付中";
 
     const lipSyncActive = isSpeechDetected || assistantLipSyncActive;
-    const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, lipSyncActive, statusLabel };
+    const pose: AvatarBehaviorState["pose"] = isSpeechDetected
+      ? "leanForward"
+      : isSpeaking
+        ? "friendly"
+        : isLoading
+          ? "upright"
+          : session.urgency === "high"
+            ? "confident"
+            : "neutral";
+    const nextBehavior: AvatarBehaviorState = {
+      pose,
+      gesture,
+      voice,
+      expression,
+      lipSyncActive,
+      statusLabel
+    };
     setAvatarBehavior(nextBehavior);
   }, [assistantLipSyncActive, isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
 
@@ -354,6 +416,21 @@ export const ChatWindow = ({
   };
 
   const handleMessageSend = async (text: string) => {
+    if (nextFieldRequest?.fieldName === "confirmSubmit") {
+      const normalized = text.trim().toLowerCase();
+      const confirmed = /^(yes|y|はい|送信|ok|お願いします)$/.test(normalized) ? "yes" : "no";
+      await handleFieldSend(confirmed);
+      return;
+    }
+    if (nextFieldRequest) {
+      await postChat({
+        fieldResponse: {
+          fieldName: nextFieldRequest.fieldName,
+          value: text
+        }
+      });
+      return;
+    }
     await postChat({ userInput: text });
   };
 
@@ -517,8 +594,8 @@ export const ChatWindow = ({
 
       {session.phase === "completed" ? null : (
         <>
-          {nextFieldRequest ? (
-            enableVoice && viewMode === "voice" ? (
+          {nextFieldRequest && viewMode === "voice" ? (
+            enableVoice ? (
               <div
                 style={{
                   position: "absolute",
@@ -537,15 +614,9 @@ export const ChatWindow = ({
                   disabled={isLoading}
                 />
               </div>
-            ) : (
-              <StructuredFieldPrompt
-                request={nextFieldRequest}
-                onSubmit={handleFieldSend}
-                disabled={isLoading}
-              />
-            )
+            ) : null
           ) : null}
-          {!enableVoice && !isLoading ? (
+          {(viewMode === "text" || !enableVoice) && !isLoading ? (
             <ChatInput onSend={handleMessageSend} disabled={isLoading} />
           ) : null}
         </>

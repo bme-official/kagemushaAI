@@ -134,6 +134,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       const nextBehavior = behaviorRef.current;
       const idleSwing = Math.sin(elapsedSec * 1.4) * 0.02;
       const handWave = Math.sin(elapsedSec * 2.1) * 0.06;
+      const pose = nextBehavior.pose;
 
       applyBoneRotation(head, { x: idleSwing * 0.4, y: idleSwing * 0.35, z: 0 });
       applyBoneRotation(neck, { x: 0, y: idleSwing * 0.25, z: 0 });
@@ -151,6 +152,26 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       applyBoneRotation(rightIndex, { x: 0.1 - handWave * 0.2 });
       applyBoneRotation(leftMiddle, { x: 0.08 + handWave * 0.15 });
       applyBoneRotation(rightMiddle, { x: 0.08 - handWave * 0.15 });
+
+      if (pose === "upright") {
+        applyBoneRotation(spine, { x: -0.03 });
+        applyBoneRotation(upperChest, { x: -0.03 });
+      }
+      if (pose === "friendly") {
+        applyBoneRotation(head, { x: 0.05, y: 0.03 });
+        applyBoneRotation(leftHand, { z: -0.14 });
+        applyBoneRotation(rightHand, { z: 0.14 });
+      }
+      if (pose === "leanForward") {
+        applyBoneRotation(spine, { x: 0.05 });
+        applyBoneRotation(upperChest, { x: 0.08 });
+        applyBoneRotation(head, { x: -0.05 });
+      }
+      if (pose === "confident") {
+        applyBoneRotation(spine, { x: -0.02, y: 0.02 });
+        applyBoneRotation(leftUpperArm, { x: -0.15, z: -0.92 });
+        applyBoneRotation(rightUpperArm, { x: -0.15, z: 0.92 });
+      }
 
       switch (nextBehavior.gesture) {
         case "thinking":

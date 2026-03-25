@@ -29,7 +29,7 @@ export const inquiryConfig = {
     "資料請求",
     "その他"
   ],
-  requiredFieldsForSubmit: ["name", "email", "inquiryBody"] as const,
+  requiredFieldsForSubmit: ["organization", "name", "email", "inquiryBody"] as const,
   humanHandoffConditions: {
     highUrgency: true,
     keywords: ["緊急", "炎上", "法務", "クレーム", "契約トラブル"]
@@ -44,9 +44,17 @@ export const inquiryConfig = {
   },
   fieldCollection: [
     {
+      fieldName: "organization",
+      inputType: "text",
+      label: "会社名",
+      placeholder: "例) 株式会社影武者AI",
+      required: true,
+      showTiming: "before_confirm"
+    },
+    {
       fieldName: "name",
       inputType: "text",
-      label: "担当者名",
+      label: "個人名",
       placeholder: "例) 山田 太郎",
       required: true,
       showTiming: "after_intent_guess"
@@ -54,18 +62,10 @@ export const inquiryConfig = {
     {
       fieldName: "email",
       inputType: "email",
-      label: "メールアドレス",
-      placeholder: "example@company.com",
+      label: "連絡先（メール）",
+      placeholder: "example@company.com または連絡が取れるメール",
       required: true,
       showTiming: "after_intent_guess"
-    },
-    {
-      fieldName: "organization",
-      inputType: "text",
-      label: "組織・団体名",
-      placeholder: "任意（個人の方は空欄可）",
-      required: false,
-      showTiming: "before_confirm"
     },
     {
       fieldName: "phone",

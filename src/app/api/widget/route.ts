@@ -75,15 +75,16 @@ const buildWidgetScript = (baseAppUrl: string) => {
 
   const iframe = document.createElement("iframe");
   iframe.className = "kagemusha-chat-iframe";
-  iframe.allow = "microphone *";
+  iframe.allow = "microphone *; autoplay *";
   iframe.referrerPolicy = "strict-origin-when-cross-origin";
 
-  const notifyIframeVisibility = (visible) => {
+  const notifyIframeVisibility = (visible, userGesture) => {
     if (!iframe.contentWindow) return;
     iframe.contentWindow.postMessage(
       {
         type: "kagemusha-chat-visibility",
-        visible
+        visible,
+        userGesture
       },
       appOrigin
     );
@@ -94,7 +95,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
       const source = encodeURIComponent(window.location.href);
       iframe.src = appUrl + iframePath + "?source=" + source + "&audio=1";
     } else {
-      notifyIframeVisibility(true);
+      notifyIframeVisibility(true, true);
     }
     backdrop.classList.add("open");
     backdrop.setAttribute("aria-hidden", "false");
@@ -103,7 +104,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const close = () => {
     backdrop.classList.remove("open");
     backdrop.setAttribute("aria-hidden", "true");
-    notifyIframeVisibility(false);
+    notifyIframeVisibility(false, false);
   };
 
   button.addEventListener("click", open);
@@ -119,7 +120,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   modal.appendChild(iframe);
   backdrop.appendChild(modal);
   iframe.addEventListener("load", () => {
-    notifyIframeVisibility(backdrop.classList.contains("open"));
+    notifyIframeVisibility(backdrop.classList.contains("open"), true);
   });
 
   const mount = () => {

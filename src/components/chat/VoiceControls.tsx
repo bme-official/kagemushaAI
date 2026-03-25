@@ -124,14 +124,8 @@ export const VoiceControls = ({
     recognition.onstart = () => {
       onListeningChange?.(true);
     };
-    recognition.onspeechstart = () => {
-      markSpeechDetected();
-    };
-    recognition.onspeechend = () => {
-      clearSpeechIdleTimer();
-      setIsSpeechDetected(false);
-      onSpeechDetectedChange?.(false);
-    };
+    recognition.onspeechstart = () => {};
+    recognition.onspeechend = () => {};
 
     recognition.onresult = (event) => {
       const resultIndex = Math.max(0, (event?.results?.length ?? 1) - 1);
