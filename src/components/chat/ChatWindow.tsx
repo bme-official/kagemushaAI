@@ -258,10 +258,14 @@ export const ChatWindow = ({
             const primer = new SpeechSynthesisUtterance(" ");
             primer.volume = 0;
             window.speechSynthesis.speak(primer);
+            window.speechSynthesis.resume();
           } catch {
             // ignore primer error
           }
         }
+        window.setTimeout(() => {
+          trySpeakOpeningGreeting();
+        }, 0);
       }
       const parsed = parseRuntimeSettings(event.data.avatarSettings);
       if (parsed) {
@@ -272,7 +276,7 @@ export const ChatWindow = ({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [applyRuntimeSettings, parseRuntimeSettings]);
+  }, [applyRuntimeSettings, parseRuntimeSettings, trySpeakOpeningGreeting]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -399,6 +403,8 @@ export const ChatWindow = ({
       markAsSpokenId?: string;
     }) => {
       if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      let started = false;
+      let startTimeout: number | null = null;
       const buildUtterance = (withConfiguredVoice: boolean) => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = voiceConfig.locale;
@@ -408,13 +414,24 @@ export const ChatWindow = ({
           applyConfiguredVoice(utterance);
         }
         utterance.onstart = () => {
+          started = true;
+          if (startTimeout !== null) {
+            window.clearTimeout(startTimeout);
+            startTimeout = null;
+          }
           if (handlers.markAsSpokenId) {
             lastSpokenMessageIdRef.current = handlers.markAsSpokenId;
           }
           handlers.onStart();
         };
         utterance.onboundary = handlers.onBoundary;
-        utterance.onend = handlers.onEnd;
+        utterance.onend = () => {
+          if (startTimeout !== null) {
+            window.clearTimeout(startTimeout);
+            startTimeout = null;
+          }
+          handlers.onEnd();
+        };
         return utterance;
       };
 
@@ -424,6 +441,10 @@ export const ChatWindow = ({
       let didRetry = false;
       const first = buildUtterance(true);
       first.onerror = () => {
+        if (startTimeout !== null) {
+          window.clearTimeout(startTimeout);
+          startTimeout = null;
+        }
         if (didRetry) {
           handlers.onError();
           return;
@@ -438,6 +459,15 @@ export const ChatWindow = ({
         }, 60);
       };
       window.speechSynthesis.speak(first);
+      startTimeout = window.setTimeout(() => {
+        if (started || didRetry) return;
+        didRetry = true;
+        const retry = buildUtterance(false);
+        retry.onerror = handlers.onError;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+        window.speechSynthesis.speak(retry);
+      }, 1200);
     },
     [applyConfiguredVoice]
   );
