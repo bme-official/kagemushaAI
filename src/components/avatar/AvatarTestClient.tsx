@@ -471,19 +471,22 @@ export const AvatarTestClient = () => {
               onChange={(event) => setTtsApiVoice(event.target.value)}
               style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
             >
-              <optgroup label="女性（日本語おすすめ）">
+              <optgroup label="★ ElevenLabs（高品質・日本語ネイティブ）">
+                <option value="el:3JDquces8E8bkmvbh6Bc">ElevenLabs — おすすめ日本語ボイス</option>
+              </optgroup>
+              <optgroup label="OpenAI — 女性（日本語対応）">
                 <option value="shimmer">shimmer — 落ち着いた女性 ★日本語推奨</option>
                 <option value="nova">nova — 自然な女性</option>
                 <option value="coral">coral — 温かみのある女性</option>
                 <option value="sage">sage — 穏やかな中性</option>
               </optgroup>
-              <optgroup label="男性（日本語対応）">
+              <optgroup label="OpenAI — 男性（日本語対応）">
                 <option value="echo">echo — 男性</option>
                 <option value="onyx">onyx — 低音男性</option>
                 <option value="ash">ash — 落ち着いた男性</option>
                 <option value="fable">fable — 英国アクセント男性</option>
               </optgroup>
-              <optgroup label="ニュートラル">
+              <optgroup label="OpenAI — ニュートラル">
                 <option value="alloy">alloy — ニュートラル</option>
               </optgroup>
             </select>
