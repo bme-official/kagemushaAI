@@ -200,6 +200,20 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
+  const apiAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopApiAudio = useCallback(() => {
+    const a = apiAudioRef.current;
+    if (!a) return;
+    a.pause();
+    a.onplay = null;
+    a.onended = null;
+    a.onerror = null;
+    try {
+      if (a.src.startsWith("blob:")) URL.revokeObjectURL(a.src);
+    } catch { /* ignore */ }
+    apiAudioRef.current = null;
+  }, []);
 
   const applyRuntimeSettings = useCallback((parsed: RuntimeAvatarSettings | null | undefined) => {
     if (!parsed) return;
@@ -349,10 +363,11 @@ export const ChatWindow = ({
     setIsSpeaking(false);
     setIsSpeechDetected(false);
     setAssistantLipSyncActive(false);
+    stopApiAudio();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
-  }, [isEmbedVisible]);
+  }, [isEmbedVisible, stopApiAudio]);
 
   const pulseAssistantLipSync = useCallback(() => {
     setAssistantLipSyncActive(true);
@@ -412,6 +427,61 @@ export const ChatWindow = ({
     }
   }, [runtimeAvatarSettings.avatarNameKana, runtimeAvatarSettings.voiceModel]);
 
+  const speakViaTtsApi = useCallback(
+    async (
+      text: string,
+      handlers: {
+        onStart: () => void;
+        onBoundary: () => void;
+        onEnd: () => void;
+        onError: () => void;
+        markAsSpokenId?: string;
+      }
+    ): Promise<void> => {
+      stopApiAudio();
+      try {
+        const response = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text.slice(0, 800) })
+        });
+        if (!response.ok) {
+          handlers.onError();
+          return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        apiAudioRef.current = audio;
+        let lipSyncTimer: number | null = null;
+        audio.onplay = () => {
+          setNeedsAudioStart(false);
+          if (handlers.markAsSpokenId) {
+            lastSpokenMessageIdRef.current = handlers.markAsSpokenId;
+          }
+          handlers.onStart();
+          lipSyncTimer = window.setInterval(() => handlers.onBoundary(), 120);
+        };
+        audio.onended = () => {
+          if (lipSyncTimer !== null) window.clearInterval(lipSyncTimer);
+          try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+          if (apiAudioRef.current === audio) apiAudioRef.current = null;
+          handlers.onEnd();
+        };
+        audio.onerror = () => {
+          if (lipSyncTimer !== null) window.clearInterval(lipSyncTimer);
+          try { URL.revokeObjectURL(url); } catch { /* ignore */ }
+          if (apiAudioRef.current === audio) apiAudioRef.current = null;
+          handlers.onError();
+        };
+        await audio.play();
+      } catch {
+        handlers.onError();
+      }
+    },
+    [stopApiAudio]
+  );
+
   const speakWithFallback = useCallback(
     (text: string, handlers: {
       onStart: () => void;
@@ -420,7 +490,11 @@ export const ChatWindow = ({
       onError: () => void;
       markAsSpokenId?: string;
     }) => {
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      // ブラウザ TTS が使えない場合は即座に API TTS へ
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        void speakViaTtsApi(text, handlers);
+        return;
+      }
       let started = false;
       let startTimeout: number | null = null;
       const buildUtterance = (withConfiguredVoice: boolean) => {
@@ -457,38 +531,24 @@ export const ChatWindow = ({
       window.speechSynthesis.cancel();
       window.speechSynthesis.resume();
 
-      let didRetry = false;
       const first = buildUtterance(true);
+      // ブラウザ TTS がエラー → API TTS にフォールバック
       first.onerror = () => {
         if (startTimeout !== null) {
           window.clearTimeout(startTimeout);
           startTimeout = null;
         }
-        if (didRetry) {
-          handlers.onError();
-          return;
-        }
-        didRetry = true;
-        const retry = buildUtterance(false);
-        retry.onerror = handlers.onError;
-        window.setTimeout(() => {
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.resume();
-          window.speechSynthesis.speak(retry);
-        }, 60);
+        void speakViaTtsApi(text, handlers);
       };
       window.speechSynthesis.speak(first);
+      // 1.2 秒以内に onstart が来なければ API TTS にフォールバック
       startTimeout = window.setTimeout(() => {
-        if (started || didRetry) return;
-        didRetry = true;
-        const retry = buildUtterance(false);
-        retry.onerror = handlers.onError;
+        if (started) return;
         window.speechSynthesis.cancel();
-        window.speechSynthesis.resume();
-        window.speechSynthesis.speak(retry);
+        void speakViaTtsApi(text, handlers);
       }, 1200);
     },
-    [applyConfiguredVoice]
+    [applyConfiguredVoice, speakViaTtsApi]
   );
 
   const trySpeakOpeningGreeting = useCallback(() => {
@@ -635,11 +695,12 @@ export const ChatWindow = ({
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
       setIsSpeaking(false);
       setAssistantLipSyncActive(false);
+      stopApiAudio();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     }
-  }, [enableVoice, ttsEnabled]);
+  }, [enableVoice, stopApiAudio, ttsEnabled]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -663,6 +724,7 @@ export const ChatWindow = ({
 
   const handleVoiceTranscript = (text: string) => {
     if (isSpeaking && !isSpeechDetected) return;
+    stopApiAudio();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
