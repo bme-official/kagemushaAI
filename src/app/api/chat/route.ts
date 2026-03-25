@@ -172,20 +172,22 @@ export async function POST(request: NextRequest) {
   };
 
   // 問い合わせ送信完了後にユーザーが新たな会話を始めた場合は、
-  // セッション状態と会話履歴をリセットして新しい会話として扱う。
-  // メッセージ履歴（name: 〇〇 / email: ... など）を残したまま AI を呼ぶと
-  // AI が「問い合わせフロー継続中」と誤認識するため messages もクリアする。
+  // 問い合わせ内容をリセットして新しい相談として扱う。
+  // 連絡先情報（name/email/org/phone）は保持し再利用できるようにする。
+  // メッセージ履歴は保持するが、フォーム入力行（"name: 〇〇" 形式）は
+  // AI が旧フローの続きと誤認しないよう除去する。
   if (workingSession.phase === "completed" && body.userInput) {
     workingSession.phase = "collecting";
-    workingSession.collectedFields = {};
+    const { name, email, organization, phone } = workingSession.collectedFields;
+    workingSession.collectedFields = { name, email, organization, phone };
     workingSession.inferredIntent = null;
     workingSession.inferredCategory = null;
     workingSession.summaryDraft = "";
-    // 完了後メッセージのみ残し、フォーム入力履歴は AI に渡さない
-    workingSession.messages = workingSession.messages.filter(
-      (m) => m.role === "assistant" && typeof m.content === "string" &&
-        (m.content.includes("受付を完了") || m.content.includes("ご連絡"))
-    ).slice(-1);
+    workingSession.messages = workingSession.messages.filter((m) => {
+      if (m.role !== "user") return true;
+      const content = typeof m.content === "string" ? m.content : "";
+      return !/^(name|email|organization|phone|inquiryBody|deadline|budget):\s/.test(content);
+    });
   }
 
   // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）。

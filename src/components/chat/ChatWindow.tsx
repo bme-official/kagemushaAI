@@ -180,9 +180,15 @@ export const ChatWindow = ({
     enableVoice && voiceConfig.enabled && voiceConfig.autoSpeakAssistant
   );
   // スピーカーのミュート状態（モバイルはデフォルトでミュート = 音は出ないが読み上げは実行）
-  // 初期値は false（非モバイル）。クライアント側 useEffect でモバイル判定後に更新する。
-  const [speakerMuted, setSpeakerMuted] = useState(false);
-  const speakerMutedRef = useRef(false);
+  // モバイルはデフォルトでスピーカーOFF（スピーカーボタンタップでON・TTS再生を開始）
+  // lazy initializer で初回レンダー時に判定してTTSより先にrefに反映する
+  const [speakerMuted, setSpeakerMuted] = useState(() => {
+    if (typeof navigator === "undefined") return false;
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  });
+  const speakerMutedRef = useRef(
+    typeof navigator !== "undefined" && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+  );
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null
   );

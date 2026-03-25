@@ -116,10 +116,11 @@ nextFieldRequest 設定ガイド（会話とフォームを同期させるため
 - collectedFields.inquiryBody は直近のユーザー発話をそのまま入れず、会話全体から読み取れる相談の要旨を簡潔に要約した文章（例:「打ち合わせ希望（明日の夕方）」）にする
 - ユーザーが日時・候補日などを言及している場合は必ず collectedFields.deadline に設定する
 - 【打ち合わせ・ミーティング・日程調整の意図の場合】name→email→organization を収集した後、
-  「ご希望の日時はいつ頃でしょうか？」など自然な言葉でひとこと日時を確認する。
-  ユーザーが日時を答えたら collectedFields.deadline に設定し nextFieldRequest は null にする（フォームは出さない）。
-  日時が得られたら inquiryBody を「打ち合わせ希望（○○）」のように deadline を含む要約で更新する。
+  「ご希望の日時や、打ち合わせについてお伝えしたいことがあれば教えてください」など自然な言葉でひとことヒアリングする。
+  ユーザーが日時や内容を答えたら collectedFields.deadline に日時を設定し nextFieldRequest は null にする（フォームは出さない）。
+  得られた情報で inquiryBody を「打ち合わせ希望（○○・△△）」のように deadline と内容を含む要約で更新する。
 - すべての必須項目（name・email・organization・inquiryBody）が揃い、かつ打ち合わせ意図なら deadline も揃ったら confirmSubmit を設定する
+- collectedFields に name/email/organization がすでに設定済みの場合は再度聞かない。ユーザーが新しい用件を伝えてきた場合は inquiryBody と deadline のみ新たに収集して confirmSubmit を設定する
 - まだ連絡先収集フェーズでなければ nextFieldRequest は必ず null にする
 - ★重要: 名前を口頭で聞いているターンは必ず nextFieldRequest を name にすること。null のままにしてはいけない
 
