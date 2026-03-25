@@ -288,15 +288,18 @@ export async function POST(request: NextRequest) {
     Boolean(workingSession.collectedFields[field])
   );
 
-  if (!nextFieldRequest && hasRequired && finalShouldCollectContact) {
+  // 必須項目が揃ったら任意フィールドの示唆を無視して必ず確認フェーズへ移行する。
+  // AI が phone などの任意フィールドを nextFieldRequest で返しても
+  // getNextFieldRequest がそれを返してしまい !nextFieldRequest が偽になる問題を防ぐ。
+  if (hasRequired && finalShouldCollectContact) {
     workingSession.phase = "confirming";
     workingSession.summaryDraft = summarizeInquiry(workingSession);
   } else {
     workingSession.phase = "collecting";
   }
 
-  // finalNextFieldRequest を先に確定してから fallback テキストに渡す。
-  // これにより phase === "confirming" 時の fallback が confirmSubmit を認識できる。
+  // confirming フェーズでは nextFieldRequest を confirmSubmit に上書きする。
+  // 任意フィールドが残っていても確認画面を優先する。
   let finalNextFieldRequest = nextFieldRequest;
   if (workingSession.phase === "confirming") {
     finalNextFieldRequest = {
