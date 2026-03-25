@@ -202,38 +202,61 @@ export const ChatWindow = ({
   const canRenderVrm =
     avatarRuntimeConfig.enabled && Boolean(avatarModelUrl) && avatarModelUrl.toLowerCase().endsWith(".vrm");
 
+  const parseRuntimeSettings = useCallback((value: unknown): RuntimeAvatarSettings | null => {
+    if (!value) return null;
+    if (typeof value === "object") {
+      return value as RuntimeAvatarSettings;
+    }
+    if (typeof value !== "string") return null;
+    try {
+      return JSON.parse(value) as RuntimeAvatarSettings;
+    } catch {
+      try {
+        return JSON.parse(decodeURIComponent(value)) as RuntimeAvatarSettings;
+      } catch {
+        return null;
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handleMessage = (event: MessageEvent<{
       type?: string;
       visible?: boolean;
       userGesture?: boolean;
-      avatarSettings?: RuntimeAvatarSettings;
+      avatarSettings?: RuntimeAvatarSettings | string;
     }>) => {
       if (event.data?.type !== "kagemusha-chat-visibility") return;
       setIsEmbedVisible(Boolean(event.data.visible));
       if (event.data.userGesture) {
         setAudioUnlocked(true);
+        if (typeof window !== "undefined" && "speechSynthesis" in window) {
+          try {
+            const primer = new SpeechSynthesisUtterance(" ");
+            primer.volume = 0;
+            window.speechSynthesis.speak(primer);
+          } catch {
+            // ignore primer error
+          }
+        }
       }
-      if (event.data.avatarSettings) {
-        applyRuntimeSettings(event.data.avatarSettings);
+      const parsed = parseRuntimeSettings(event.data.avatarSettings);
+      if (parsed) {
+        applyRuntimeSettings(parsed);
       }
     };
     window.addEventListener("message", handleMessage);
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [applyRuntimeSettings]);
+  }, [applyRuntimeSettings, parseRuntimeSettings]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (initialAvatarSettings) {
-      try {
-        const parsed = JSON.parse(initialAvatarSettings) as RuntimeAvatarSettings;
-        applyRuntimeSettings(parsed);
-      } catch {
-        // ignore malformed query payload
-      }
+      const parsed = parseRuntimeSettings(initialAvatarSettings);
+      if (parsed) applyRuntimeSettings(parsed);
     }
     const syncAvatarSettings = () => {
       try {
@@ -256,7 +279,7 @@ export const ChatWindow = ({
       window.removeEventListener("kagemusha-avatar-settings-updated", syncAvatarSettings);
       window.removeEventListener("storage", handleStorage);
     };
-  }, [applyRuntimeSettings, initialAvatarSettings]);
+  }, [applyRuntimeSettings, initialAvatarSettings, parseRuntimeSettings]);
 
   useEffect(() => {
     if (isEmbedVisible) return;
@@ -324,37 +347,81 @@ export const ChatWindow = ({
     }
   }, [runtimeAvatarSettings.avatarNameKana, runtimeAvatarSettings.voiceModel]);
 
+  const speakWithFallback = useCallback(
+    (text: string, handlers: {
+      onStart: () => void;
+      onBoundary: () => void;
+      onEnd: () => void;
+      onError: () => void;
+      markAsSpokenId?: string;
+    }) => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      const buildUtterance = (withConfiguredVoice: boolean) => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = voiceConfig.locale;
+        utterance.rate = voiceConfig.speechRate;
+        utterance.pitch = voiceConfig.speechPitch;
+        if (withConfiguredVoice) {
+          applyConfiguredVoice(utterance);
+        }
+        utterance.onstart = () => {
+          if (handlers.markAsSpokenId) {
+            lastSpokenMessageIdRef.current = handlers.markAsSpokenId;
+          }
+          handlers.onStart();
+        };
+        utterance.onboundary = handlers.onBoundary;
+        utterance.onend = handlers.onEnd;
+        return utterance;
+      };
+
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+
+      let didRetry = false;
+      const first = buildUtterance(true);
+      first.onerror = () => {
+        if (didRetry) {
+          handlers.onError();
+          return;
+        }
+        didRetry = true;
+        const retry = buildUtterance(false);
+        retry.onerror = handlers.onError;
+        window.setTimeout(() => {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+          window.speechSynthesis.speak(retry);
+        }, 60);
+      };
+      window.speechSynthesis.speak(first);
+    },
+    [applyConfiguredVoice]
+  );
+
   const trySpeakOpeningGreeting = useCallback(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
     if (!isEmbedVisible) return;
     if ((canRenderVrm && !avatarReady) || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(getOpeningGreetingText());
-    utterance.lang = voiceConfig.locale;
-    utterance.rate = voiceConfig.speechRate;
-    utterance.pitch = voiceConfig.speechPitch;
-    applyConfiguredVoice(utterance);
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      pulseAssistantLipSync();
-      if (latestAssistant) {
-        lastSpokenMessageIdRef.current = latestAssistant.id;
-      }
-      hasSpokenOpeningRef.current = true;
-    };
-    utterance.onboundary = () => pulseAssistantLipSync();
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-    };
-    window.speechSynthesis.speak(utterance);
+    speakWithFallback(getOpeningGreetingText(), {
+      onStart: () => {
+        setIsSpeaking(true);
+        pulseAssistantLipSync();
+        hasSpokenOpeningRef.current = true;
+      },
+      onBoundary: () => pulseAssistantLipSync(),
+      onEnd: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+      },
+      markAsSpokenId: latestAssistant?.id
+    });
   }, [
-    applyConfiguredVoice,
     avatarReady,
     canRenderVrm,
     enableVoice,
@@ -362,10 +429,11 @@ export const ChatWindow = ({
     isEmbedVisible,
     latestAssistant,
     pulseAssistantLipSync,
+    speakWithFallback,
     ttsEnabled
   ]);
 
-  const unlockAudio = () => {
+  const unlockAudio = useCallback(() => {
     if (!audioUnlocked) {
       setAudioUnlocked(true);
     }
@@ -379,7 +447,7 @@ export const ChatWindow = ({
       }
     }
     trySpeakOpeningGreeting();
-  };
+  }, [audioUnlocked, trySpeakOpeningGreeting]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
@@ -389,28 +457,23 @@ export const ChatWindow = ({
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(latestAssistant.content);
-    utterance.lang = voiceConfig.locale;
-    utterance.rate = voiceConfig.speechRate;
-    utterance.pitch = voiceConfig.speechPitch;
-    applyConfiguredVoice(utterance);
-    utterance.onstart = () => {
-      lastSpokenMessageIdRef.current = latestAssistant.id;
-      setIsSpeaking(true);
-      pulseAssistantLipSync();
-    };
-    utterance.onboundary = () => pulseAssistantLipSync();
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-    };
-    window.speechSynthesis.speak(utterance);
-  }, [applyConfiguredVoice, audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
+    speakWithFallback(latestAssistant.content, {
+      onStart: () => {
+        setIsSpeaking(true);
+        pulseAssistantLipSync();
+      },
+      onBoundary: () => pulseAssistantLipSync(),
+      onEnd: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+      },
+      markAsSpokenId: latestAssistant.id
+    });
+  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, speakWithFallback, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
@@ -466,6 +529,15 @@ export const ChatWindow = ({
     }
     setAssistantLipSyncActive(false);
   }, [isSpeechDetected]);
+
+  useEffect(() => {
+    if (!isSpeechDetected || !isListening || !isSpeaking) return;
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+    setAssistantLipSyncActive(false);
+  }, [isListening, isSpeaking, isSpeechDetected]);
 
   useEffect(() => {
     return () => {
