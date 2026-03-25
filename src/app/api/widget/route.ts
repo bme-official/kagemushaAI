@@ -31,6 +31,9 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const modalTitle = scriptEl?.dataset?.modalTitle || "${escapedTitle}";
   const iframePath = scriptEl?.dataset?.iframePath || "${escapedPath}";
   const embeddedSettingsRaw = scriptEl?.dataset?.avatarSettings || "";
+  const parentOrigin = window.location.origin;
+  const bridgeUrl = appUrl + "/embed/settings-bridge?parentOrigin=" + encodeURIComponent(parentOrigin);
+  let latestBridgeSettings = null;
 
   const style = document.createElement("style");
   style.textContent = \`
@@ -78,8 +81,32 @@ const buildWidgetScript = (baseAppUrl: string) => {
   iframe.className = "kagemusha-chat-iframe";
   iframe.allow = "microphone *; autoplay *";
   iframe.referrerPolicy = "strict-origin-when-cross-origin";
+  const bridgeFrame = document.createElement("iframe");
+  bridgeFrame.style.width = "0";
+  bridgeFrame.style.height = "0";
+  bridgeFrame.style.border = "0";
+  bridgeFrame.style.position = "absolute";
+  bridgeFrame.style.opacity = "0";
+  bridgeFrame.style.pointerEvents = "none";
+  bridgeFrame.setAttribute("aria-hidden", "true");
+  bridgeFrame.src = bridgeUrl;
+
+  const applyWidgetLabels = (settings) => {
+    if (!settings || typeof settings !== "object") return;
+    const nextButtonLabel =
+      settings.widgetButtonLabel ||
+      (settings.avatarName ? settings.avatarName + "に相談" : buttonLabel);
+    const nextModalTitle =
+      settings.widgetModalTitle ||
+      (settings.companyName ? settings.companyName + " AI相談チャット" : modalTitle);
+    button.textContent = nextButtonLabel;
+    title.textContent = nextModalTitle;
+  };
 
   const readAvatarSettings = () => {
+    if (latestBridgeSettings && typeof latestBridgeSettings === "object") {
+      return latestBridgeSettings;
+    }
     if (embeddedSettingsRaw) {
       try {
         const parsed = JSON.parse(embeddedSettingsRaw);
@@ -147,6 +174,20 @@ const buildWidgetScript = (baseAppUrl: string) => {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") close();
   });
+  window.addEventListener("message", (event) => {
+    if (event.origin !== appOrigin) return;
+    if (event.data?.type !== "kagemusha-avatar-settings") return;
+    if (!event.data.settings || typeof event.data.settings !== "object") return;
+    latestBridgeSettings = event.data.settings;
+    applyWidgetLabels(latestBridgeSettings);
+    if (iframe.src && backdrop.classList.contains("open")) {
+      notifyIframeVisibility(true, false);
+    }
+  });
+  bridgeFrame.addEventListener("load", () => {
+    if (!bridgeFrame.contentWindow) return;
+    bridgeFrame.contentWindow.postMessage({ type: "kagemusha-request-settings" }, appOrigin);
+  });
 
   modal.appendChild(header);
   modal.appendChild(iframe);
@@ -156,6 +197,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   });
 
   const mount = () => {
+    document.body.appendChild(bridgeFrame);
     document.body.appendChild(button);
     document.body.appendChild(backdrop);
   };
