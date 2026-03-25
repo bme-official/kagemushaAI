@@ -471,8 +471,19 @@ export const AvatarTestClient = () => {
               onChange={(event) => setTtsApiVoice(event.target.value)}
               style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
             >
-              <optgroup label="★ ElevenLabs（高品質・日本語ネイティブ）">
-                <option value="el:3JDquces8E8bkmvbh6Bc">ElevenLabs — おすすめ日本語ボイス</option>
+              <optgroup label="ElevenLabs — プリメイド女性（無料プランで使用可）">
+                <option value="el:21m00Tcm4TlvDq8ikWAM">Rachel — 落ち着いた女性</option>
+                <option value="el:EXAVITQu4vr4xnSDxMaL">Bella — 明るい女性</option>
+                <option value="el:MF3mGyEYCl7XYWbV9V9of">Elli — やさしい女性</option>
+              </optgroup>
+              <optgroup label="ElevenLabs — プリメイド男性（無料プランで使用可）">
+                <option value="el:pNInz6obpgDQGcFmaJgB">Adam — 男性・ナチュラル</option>
+                <option value="el:ErXwobaYiN019PkySvjV">Antoni — 男性・自信</option>
+                <option value="el:TxGEqnHWrfWFTfGW9XjX">Josh — 男性・若め</option>
+                <option value="el:yoZ06aMxZJJ28mfd3POQ">Sam — 男性・エネルギー</option>
+              </optgroup>
+              <optgroup label="ElevenLabs — ボイスライブラリ（有料プラン必須）">
+                <option value="el:3JDquces8E8bkmvbh6Bc">おすすめ日本語ボイス（要Starter以上）</option>
               </optgroup>
               <optgroup label="OpenAI — 女性（日本語対応）">
                 <option value="shimmer">shimmer — 落ち着いた女性 ★日本語推奨</option>
