@@ -185,7 +185,6 @@ export const ChatWindow = ({
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
-  const [needsAudioStart, setNeedsAudioStart] = useState(enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
@@ -203,6 +202,8 @@ export const ChatWindow = ({
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
   // 世代カウンター: 古い TTS 呼び出しが API フォールバックを起動するのを防ぐ
   const ttsGenerationRef = useRef(0);
+  // API TTS 呼び出し番号: 非同期フェッチ中に新しい呼び出しが来たら旧呼び出しを中断する
+  const apiCallCounterRef = useRef(0);
 
   const stopApiAudio = useCallback(() => {
     const a = apiAudioRef.current;
@@ -418,10 +419,29 @@ export const ChatWindow = ({
     if (voice) {
       utterance.voice = voice;
     }
-    if (runtimeAvatarSettings.avatarNameKana) {
-      utterance.text = utterance.text.replace(characterConfig.name, runtimeAvatarSettings.avatarNameKana);
+    // 企業名の読みがなを設定している場合は読み替える（ブラウザTTSの発音改善）
+    if (runtimeAvatarSettings.companyName && runtimeAvatarSettings.companyNameKana) {
+      utterance.text = utterance.text.replaceAll(
+        runtimeAvatarSettings.companyName,
+        runtimeAvatarSettings.companyNameKana
+      );
     }
-  }, [runtimeAvatarSettings.avatarNameKana, runtimeAvatarSettings.voiceModel]);
+    // アバター名（表示名）も読みがなに置換する
+    if (runtimeAvatarSettings.avatarName && runtimeAvatarSettings.avatarNameKana) {
+      utterance.text = utterance.text.replaceAll(
+        runtimeAvatarSettings.avatarName,
+        runtimeAvatarSettings.avatarNameKana
+      );
+    } else if (runtimeAvatarSettings.avatarNameKana) {
+      utterance.text = utterance.text.replaceAll(characterConfig.name, runtimeAvatarSettings.avatarNameKana);
+    }
+  }, [
+    runtimeAvatarSettings.avatarName,
+    runtimeAvatarSettings.avatarNameKana,
+    runtimeAvatarSettings.companyName,
+    runtimeAvatarSettings.companyNameKana,
+    runtimeAvatarSettings.voiceModel
+  ]);
 
   const speakViaTtsApi = useCallback(
     async (
@@ -434,6 +454,8 @@ export const ChatWindow = ({
         markAsSpokenId?: string;
       }
     ): Promise<void> => {
+      // この呼び出しの番号を確保し、後続の呼び出しで上書きされたら中断する
+      const myApiCall = ++apiCallCounterRef.current;
       stopApiAudio();
       try {
         const apiVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
@@ -442,17 +464,22 @@ export const ChatWindow = ({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: text.slice(0, 800), voice: apiVoice })
         });
+        // フェッチ中に新しい呼び出しが来ていたら破棄
+        if (apiCallCounterRef.current !== myApiCall) return;
         if (!response.ok) {
           handlers.onError();
           return;
         }
         const blob = await response.blob();
+        if (apiCallCounterRef.current !== myApiCall) {
+          try { URL.revokeObjectURL(URL.createObjectURL(blob)); } catch { /* ignore */ }
+          return;
+        }
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
         apiAudioRef.current = audio;
         let lipSyncTimer: number | null = null;
         audio.onplay = () => {
-          setNeedsAudioStart(false);
           if (handlers.markAsSpokenId) {
             lastSpokenMessageIdRef.current = handlers.markAsSpokenId;
           }
@@ -473,7 +500,7 @@ export const ChatWindow = ({
         };
         await audio.play();
       } catch {
-        handlers.onError();
+        if (apiCallCounterRef.current === myApiCall) handlers.onError();
       }
     },
     [stopApiAudio, runtimeAvatarSettings.ttsApiVoice]
@@ -487,8 +514,11 @@ export const ChatWindow = ({
       onError: () => void;
       markAsSpokenId?: string;
     }) => {
+      // 既存の API 音声を必ず停止
+      stopApiAudio();
       // ブラウザ TTS が使えない場合は即座に API TTS へ
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+        ++ttsGenerationRef.current; // gen を進めて旧呼び出しを無効化
         void speakViaTtsApi(text, handlers);
         return;
       }
@@ -496,6 +526,8 @@ export const ChatWindow = ({
       const myGen = ++ttsGenerationRef.current;
       let started = false;
       let startTimeout: number | null = null;
+      // タイムアウトまたは onerror のどちらか一方だけが API TTS を呼ぶ
+      let apiTriggered = false;
       const buildUtterance = (withConfiguredVoice: boolean) => {
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = voiceConfig.locale;
@@ -506,7 +538,6 @@ export const ChatWindow = ({
         }
         utterance.onstart = () => {
           started = true;
-          setNeedsAudioStart(false);
           if (startTimeout !== null) {
             window.clearTimeout(startTimeout);
             startTimeout = null;
@@ -531,7 +562,8 @@ export const ChatWindow = ({
       window.speechSynthesis.resume();
 
       const first = buildUtterance(true);
-      // ブラウザ TTS がエラー → API TTS にフォールバック（started後のキャンセルや旧世代は無視）
+      // ブラウザ TTS がエラー → API TTS にフォールバック
+      // cancel()によるonerrorと startTimeout の両方が呼ばれないように apiTriggered で防護
       first.onerror = () => {
         if (startTimeout !== null) {
           window.clearTimeout(startTimeout);
@@ -539,6 +571,8 @@ export const ChatWindow = ({
         }
         if (started) return; // 再生開始後のキャンセルはフォールバック不要
         if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
+        if (apiTriggered) return; // タイムアウトが既に API TTS を起動済み
+        apiTriggered = true;
         void speakViaTtsApi(text, handlers);
       };
       window.speechSynthesis.speak(first);
@@ -546,11 +580,12 @@ export const ChatWindow = ({
       startTimeout = window.setTimeout(() => {
         if (started) return;
         if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
+        apiTriggered = true; // cancel() が onerror を発火しても二重呼び出しを防ぐ
         window.speechSynthesis.cancel();
         void speakViaTtsApi(text, handlers);
       }, 1200);
     },
-    [applyConfiguredVoice, speakViaTtsApi]
+    [applyConfiguredVoice, speakViaTtsApi, stopApiAudio]
   );
 
   const unlockAudio = useCallback(() => {
@@ -559,37 +594,6 @@ export const ChatWindow = ({
     }
   }, [audioUnlocked]);
 
-  const handleStartVoiceChat = useCallback(() => {
-    setTtsEnabled(true);
-    if (voiceConfig.sttEnabled) {
-      setMicEnabled(true);
-    }
-    setAudioUnlocked(true);
-    if (!latestAssistant?.content) return;
-    // speakWithFallback はメインパスで speak() を同期的に呼ぶためユーザージェスチャーが保持される
-    speakWithFallback(latestAssistant.content, {
-      onStart: () => {
-        setNeedsAudioStart(false);
-        setIsSpeaking(true);
-        pulseAssistantLipSync();
-      },
-      onBoundary: () => pulseAssistantLipSync(),
-      onEnd: () => {
-        setIsSpeaking(false);
-        setAssistantLipSyncActive(false);
-      },
-      onError: () => {
-        setIsSpeaking(false);
-        setAssistantLipSyncActive(false);
-        setNeedsAudioStart(true);
-      },
-      markAsSpokenId: latestAssistant.id
-    });
-  }, [
-    latestAssistant,
-    pulseAssistantLipSync,
-    speakWithFallback
-  ]);
 
   // アシスタントの最新メッセージを1回だけ読み上げる（表示テキストと同一のlatestAssistant.contentを使用）
   useEffect(() => {
@@ -603,7 +607,6 @@ export const ChatWindow = ({
     speakWithFallback(latestAssistant.content, {
       onStart: () => {
         setIsSpeaking(true);
-        setNeedsAudioStart(false);
         pulseAssistantLipSync();
       },
       onBoundary: () => pulseAssistantLipSync(),
@@ -944,33 +947,6 @@ export const ChatWindow = ({
         </div>
       ) : null}
 
-      {enableVoice && needsAudioStart ? (
-        <div
-          style={{
-            padding: "8px 12px",
-            borderBottom: "1px solid #e2e8f0",
-            background: "#f8fafc",
-            display: "flex",
-            justifyContent: "center"
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleStartVoiceChat}
-            style={{
-              border: "1px solid #0f172a",
-              borderRadius: 999,
-              background: "#0f172a",
-              color: "#fff",
-              padding: "8px 14px",
-              fontSize: 13,
-              cursor: "pointer"
-            }}
-          >
-            チャットを開始（音声を有効化）
-          </button>
-        </div>
-      ) : null}
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
         {enableVoice ? (
