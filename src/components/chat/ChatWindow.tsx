@@ -564,22 +564,21 @@ export const ChatWindow = ({
         silent.src =
           "data:audio/mpeg;base64,SUQzBAAAAAAA/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+MYxDsAAANIAAAAAP/////////////////////////////////////////////////////////////////AADwP/////////////////////////////////////////////////////////////////A==";
         silent.volume = 0;
-        // サイレント再生成功後に TTS 再試行をトリガーする
+        // サイレント再生成功後、まだ音声が再生されていない場合のみ TTS 再試行をトリガーする。
+        // 挨拶など再生中の音声がある場合はリセットしない（途中で止めて最初から再生される問題を防ぐ）。
         silent.play().then(() => {
-          lastSpokenMessageIdRef.current = null;
-          setAudioUnlocked((prev) => {
-            // state 変化で TTS effect を再発火させる（同値でも強制リセット経由）
-            return prev;
-          });
-          // ttsEnabled を一時的に flip して TTS effect を確実に再発火
-          setTtsEnabled((prev) => {
-            if (prev) {
-              // 次フレームで true に戻す
-              requestAnimationFrame(() => setTtsEnabled(true));
-              return false;
-            }
-            return prev;
-          });
+          // apiAudioRef.current が null のとき = 何も再生していない → 再試行して良い
+          if (!apiAudioRef.current) {
+            lastSpokenMessageIdRef.current = null;
+            // ttsEnabled を一時的に flip して TTS effect を確実に再発火
+            setTtsEnabled((prev) => {
+              if (prev) {
+                requestAnimationFrame(() => setTtsEnabled(true));
+                return false;
+              }
+              return prev;
+            });
+          }
         }).catch(() => {
           // サイレント再生失敗 = まだジェスチャーが足りない → フラグをリセットして次回再試行
           iosAudioUnlockedRef.current = false;

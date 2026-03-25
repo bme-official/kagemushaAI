@@ -198,7 +198,9 @@ export async function POST(request: NextRequest) {
         kind: "text",
         content: userText
       });
-      if (!workingSession.collectedFields.inquiryBody && userText.length >= 10) {
+      // 3文字以上の発話は inquiryBody の候補として記録する。
+      // 「打ち合わせしよう」(8文字)等の短い意図表明もカバーするため閾値を引き下げ。
+      if (!workingSession.collectedFields.inquiryBody && userText.length >= 3) {
         workingSession.collectedFields.inquiryBody = userText;
       }
     }
