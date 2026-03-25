@@ -119,6 +119,7 @@ type RuntimeAvatarSettings = {
   companyName?: string;
   companyNameKana?: string;
   voiceModel?: string;
+  ttsApiVoice?: string;
   profile?: string;
   statuses?: string[];
   statusMappings?: Record<
@@ -201,6 +202,8 @@ export const ChatWindow = ({
   const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
+  // 世代カウンター: 古い TTS 呼び出しが API フォールバックを起動するのを防ぐ
+  const ttsGenerationRef = useRef(0);
 
   const stopApiAudio = useCallback(() => {
     const a = apiAudioRef.current;
@@ -440,10 +443,11 @@ export const ChatWindow = ({
     ): Promise<void> => {
       stopApiAudio();
       try {
+        const apiVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
         const response = await fetch("/api/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.slice(0, 800) })
+          body: JSON.stringify({ text: text.slice(0, 800), voice: apiVoice })
         });
         if (!response.ok) {
           handlers.onError();
@@ -479,7 +483,7 @@ export const ChatWindow = ({
         handlers.onError();
       }
     },
-    [stopApiAudio]
+    [stopApiAudio, runtimeAvatarSettings.ttsApiVoice]
   );
 
   const speakWithFallback = useCallback(
@@ -495,6 +499,8 @@ export const ChatWindow = ({
         void speakViaTtsApi(text, handlers);
         return;
       }
+      // 世代カウンターを進め、後続の新しい呼び出しが来たら古い呼び出しのAPIフォールバックを無効化
+      const myGen = ++ttsGenerationRef.current;
       let started = false;
       let startTimeout: number | null = null;
       const buildUtterance = (withConfiguredVoice: boolean) => {
@@ -532,18 +538,21 @@ export const ChatWindow = ({
       window.speechSynthesis.resume();
 
       const first = buildUtterance(true);
-      // ブラウザ TTS がエラー → API TTS にフォールバック
+      // ブラウザ TTS がエラー → API TTS にフォールバック（started後のキャンセルや旧世代は無視）
       first.onerror = () => {
         if (startTimeout !== null) {
           window.clearTimeout(startTimeout);
           startTimeout = null;
         }
+        if (started) return; // 再生開始後のキャンセルはフォールバック不要
+        if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
         void speakViaTtsApi(text, handlers);
       };
       window.speechSynthesis.speak(first);
       // 1.2 秒以内に onstart が来なければ API TTS にフォールバック
       startTimeout = window.setTimeout(() => {
         if (started) return;
+        if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
         window.speechSynthesis.cancel();
         void speakViaTtsApi(text, handlers);
       }, 1200);

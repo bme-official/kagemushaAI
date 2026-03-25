@@ -84,6 +84,7 @@ export const AvatarTestClient = () => {
   const [companyName, setCompanyName] = useState("株式会社影武者AI");
   const [companyNameKana, setCompanyNameKana] = useState("かぶしきがいしゃかげむしゃえーあい");
   const [voiceModel, setVoiceModel] = useState("ja-JP-standard");
+  const [ttsApiVoice, setTtsApiVoice] = useState("nova");
   const [profile, setProfile] = useState("丁寧で落ち着いた口調。ヒアリングと要約が得意。");
   const [statuses, setStatuses] = useState(defaultStatuses);
   const [newStatusName, setNewStatusName] = useState("");
@@ -120,6 +121,7 @@ export const AvatarTestClient = () => {
     companyName?: string;
     companyNameKana?: string;
     voiceModel?: string;
+    ttsApiVoice?: string;
     profile?: string;
     services?: ServiceItem[];
     statuses?: string[];
@@ -139,6 +141,7 @@ export const AvatarTestClient = () => {
     if (parsed.companyName) setCompanyName(parsed.companyName);
     if (parsed.companyNameKana) setCompanyNameKana(parsed.companyNameKana);
     if (parsed.voiceModel) setVoiceModel(parsed.voiceModel);
+    if (parsed.ttsApiVoice) setTtsApiVoice(parsed.ttsApiVoice);
     if (parsed.profile) setProfile(parsed.profile);
     if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
     if (parsed.statuses?.length) setStatuses(parsed.statuses);
@@ -161,6 +164,7 @@ export const AvatarTestClient = () => {
             companyName?: string;
             companyNameKana?: string;
             voiceModel?: string;
+            ttsApiVoice?: string;
             profile?: string;
             services?: ServiceItem[];
             statuses?: string[];
@@ -210,6 +214,7 @@ export const AvatarTestClient = () => {
       companyName,
       companyNameKana,
       voiceModel,
+      ttsApiVoice,
       profile,
       services,
       statuses,
@@ -419,7 +424,7 @@ export const AvatarTestClient = () => {
           />
         </div>
         <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 13, color: "#334155" }}>声（モデル選択）</label>
+          <label style={{ fontSize: 13, color: "#334155" }}>声（ブラウザTTS モデル選択）</label>
           <select
             value={voiceModel}
             onChange={(event) => setVoiceModel(event.target.value)}
@@ -428,6 +433,24 @@ export const AvatarTestClient = () => {
             <option value="ja-JP-standard">ja-JP-standard</option>
             <option value="ja-JP-soft">ja-JP-soft</option>
             <option value="ja-JP-energetic">ja-JP-energetic</option>
+          </select>
+        </div>
+        <div style={{ display: "grid", gap: 6 }}>
+          <label style={{ fontSize: 13, color: "#334155" }}>
+            声（AIモデル選択 / OpenAI TTS）
+            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>ブラウザTTSが使えない場合に使用</span>
+          </label>
+          <select
+            value={ttsApiVoice}
+            onChange={(event) => setTtsApiVoice(event.target.value)}
+            style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
+          >
+            <option value="nova">nova（自然な女性）</option>
+            <option value="shimmer">shimmer（柔らかい女性）</option>
+            <option value="alloy">alloy（ニュートラル）</option>
+            <option value="echo">echo（男性的）</option>
+            <option value="onyx">onyx（低音男性）</option>
+            <option value="fable">fable（英国男性）</option>
           </select>
         </div>
         <div style={{ display: "grid", gap: 6 }}>
