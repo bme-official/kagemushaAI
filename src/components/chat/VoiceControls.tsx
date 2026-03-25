@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { voiceConfig } from "@/config/voice.config";
+import { MicIcon, SpeakerIcon } from "@/components/chat/VoiceIcons";
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -50,6 +51,7 @@ type VoiceControlsProps = {
   onListeningChange?: (listening: boolean) => void;
   onSpeechDetectedChange?: (speaking: boolean) => void;
   onUserInteraction?: () => void;
+  mode?: "overlay" | "inline";
 };
 
 export const VoiceControls = ({
@@ -61,7 +63,8 @@ export const VoiceControls = ({
   onToggleTts,
   onListeningChange,
   onSpeechDetectedChange,
-  onUserInteraction
+  onUserInteraction,
+  mode = "overlay"
 }: VoiceControlsProps) => {
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -177,10 +180,12 @@ export const VoiceControls = ({
   return (
     <div
       style={{
-        position: "absolute",
-        left: 12,
-        right: 12,
-        bottom: 12,
+        position: mode === "overlay" ? "absolute" : "relative",
+        left: mode === "overlay" ? 12 : undefined,
+        right: mode === "overlay" ? 12 : undefined,
+        bottom: mode === "overlay" ? 12 : undefined,
+        padding: mode === "inline" ? "8px 12px" : 0,
+        borderTop: mode === "inline" ? "1px solid #e2e8f0" : undefined,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -207,7 +212,10 @@ export const VoiceControls = ({
                 borderRadius: 999,
                 height: isSpeechDetected ? animatedHeight : baseHeight,
                 background: isSpeechDetected ? "#22c55e" : "#94a3b8",
-                transition: "all 120ms ease"
+                transition: "all 120ms ease",
+                animation: isSpeechDetected
+                  ? `kagemushaAudioBars 650ms ease-in-out ${idx * 90}ms infinite alternate`
+                  : "none"
               }}
             />
           );
@@ -234,14 +242,14 @@ export const VoiceControls = ({
             height: 42,
             borderRadius: 999,
             border: "1px solid #cbd5e1",
-            background: micEnabled ? "#0f172a" : "#ffffff",
-            color: micEnabled ? "#ffffff" : "#0f172a",
+            background: micEnabled ? "#0f172a" : "#fee2e2",
+            color: micEnabled ? "#ffffff" : "#dc2626",
             display: "grid",
             placeItems: "center",
             cursor: "pointer"
           }}
         >
-          <span style={{ fontSize: 18, lineHeight: 1 }}>🎤</span>
+          <MicIcon muted={!micEnabled} />
         </button>
         <button
           type="button"
@@ -256,16 +264,19 @@ export const VoiceControls = ({
             height: 42,
             borderRadius: 999,
             border: "1px solid #cbd5e1",
-            background: ttsEnabled ? "#0f172a" : "#ffffff",
-            color: ttsEnabled ? "#ffffff" : "#0f172a",
+            background: ttsEnabled ? "#0f172a" : "#fee2e2",
+            color: ttsEnabled ? "#ffffff" : "#dc2626",
             display: "grid",
             placeItems: "center",
             cursor: "pointer"
           }}
         >
-          <span style={{ fontSize: 18, lineHeight: 1 }}>🔊</span>
+          <SpeakerIcon muted={!ttsEnabled} />
         </button>
       </div>
+      <style>
+        {`@keyframes kagemushaAudioBars{from{transform:translateY(0);opacity:.65}to{transform:translateY(-3px);opacity:1}}`}
+      </style>
       {unsupportedMessage ? (
         <span
           style={{

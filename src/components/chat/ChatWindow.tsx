@@ -99,6 +99,7 @@ export const ChatWindow = ({
   const [micEnabled, setMicEnabled] = useState(enableVoice && voiceConfig.enabled && voiceConfig.sttEnabled);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || !enableVoice);
+  const [avatarReady, setAvatarReady] = useState(false);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
     gesture: "idle",
     voice: "muted",
@@ -106,6 +107,7 @@ export const ChatWindow = ({
     statusLabel: "ご相談受付中"
   });
   const lastSpokenMessageIdRef = useRef<string | null>(null);
+  const hasSpokenOpeningRef = useRef(false);
 
   const messages = useMemo(() => session.messages, [session.messages]);
   const latestAssistant = useMemo(
@@ -126,6 +128,7 @@ export const ChatWindow = ({
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (!hasSpokenOpeningRef.current) return;
 
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
@@ -146,6 +149,25 @@ export const ChatWindow = ({
     if (!initialAudioUnlocked || audioUnlocked) return;
     setAudioUnlocked(true);
   }, [audioUnlocked, initialAudioUnlocked]);
+
+  useEffect(() => {
+    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
+    if (!avatarReady || hasSpokenOpeningRef.current) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(characterConfig.greeting);
+    utterance.lang = voiceConfig.locale;
+    utterance.rate = voiceConfig.speechRate;
+    utterance.pitch = voiceConfig.speechPitch;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+    hasSpokenOpeningRef.current = true;
+    if (latestAssistant) {
+      lastSpokenMessageIdRef.current = latestAssistant.id;
+    }
+  }, [audioUnlocked, avatarReady, enableVoice, latestAssistant, ttsEnabled]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
@@ -188,12 +210,6 @@ export const ChatWindow = ({
     const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, statusLabel };
     setAvatarBehavior(nextBehavior);
   }, [isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
-
-  useEffect(() => {
-    if (nextFieldRequest && viewMode === "voice") {
-      setViewMode("text");
-    }
-  }, [nextFieldRequest, viewMode]);
 
   const postChat = async (payload: {
     userInput?: string;
@@ -347,7 +363,7 @@ export const ChatWindow = ({
         </div>
       ) : null}
 
-      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
         {viewMode === "voice" && enableVoice ? (
           <div style={{ flex: 1, minHeight: 0, position: "relative", padding: 12 }}>
             <div
@@ -361,7 +377,11 @@ export const ChatWindow = ({
               }}
             >
               {canRenderVrm ? (
-                <VRMCanvas modelUrl={avatarRuntimeConfig.modelUrl} behavior={avatarBehavior} />
+                <VRMCanvas
+                  modelUrl={avatarRuntimeConfig.modelUrl}
+                  behavior={avatarBehavior}
+                  onModelReady={() => setAvatarReady(true)}
+                />
               ) : (
                 <div
                   style={{
@@ -385,6 +405,7 @@ export const ChatWindow = ({
                 onListeningChange={setIsListening}
                 onSpeechDetectedChange={setIsSpeechDetected}
                 onUserInteraction={unlockAudio}
+                mode="overlay"
               />
             </div>
           </div>
@@ -408,6 +429,21 @@ export const ChatWindow = ({
           </div>
         )}
       </div>
+
+      {enableVoice && viewMode === "text" ? (
+        <VoiceControls
+          disabled={isLoading}
+          onTranscript={handleMessageSend}
+          micEnabled={micEnabled}
+          onToggleMic={setMicEnabled}
+          ttsEnabled={ttsEnabled}
+          onToggleTts={setTtsEnabled}
+          onListeningChange={setIsListening}
+          onSpeechDetectedChange={setIsSpeechDetected}
+          onUserInteraction={unlockAudio}
+          mode="inline"
+        />
+      ) : null}
 
       {session.phase === "completed" ? null : nextFieldRequest ? (
         <StructuredFieldPrompt

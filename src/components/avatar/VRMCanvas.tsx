@@ -9,13 +9,15 @@ import type { AvatarBehaviorState } from "@/types/avatar";
 type VRMCanvasProps = {
   modelUrl: string;
   behavior: AvatarBehaviorState;
+  onModelReady?: () => void;
 };
 
-export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
+export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const behaviorRef = useRef<AvatarBehaviorState>(behavior);
   const currentVrmRef = useRef<VRM | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isModelLoading, setIsModelLoading] = useState(true);
 
   useEffect(() => {
     behaviorRef.current = behavior;
@@ -28,9 +30,9 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
 
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 1000);
-    camera.position.set(0, 1.38, 1.15);
-    camera.lookAt(0, 1.3, 0);
+    const camera = new THREE.PerspectiveCamera(31, 1, 0.1, 1000);
+    camera.position.set(0, 1.52, 1.28);
+    camera.lookAt(0, 1.45, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -184,6 +186,8 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
+    setIsModelLoading(true);
+    setError(null);
     loader.load(
       modelUrl,
       (gltf) => {
@@ -191,10 +195,13 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
         VRMUtils.rotateVRM0(vrm);
         scene.add(vrm.scene);
         currentVrmRef.current = vrm;
+        setIsModelLoading(false);
         setError(null);
+        onModelReady?.();
       },
       undefined,
       () => {
+        setIsModelLoading(false);
         setError("VRMモデルの読み込みに失敗しました。");
       }
     );
@@ -215,11 +222,36 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
         container.removeChild(renderer.domElement);
       }
     };
-  }, [modelUrl]);
+  }, [modelUrl, onModelReady]);
 
   return (
     <div style={{ width: "100%", height: "100%", minHeight: 240, position: "relative" }}>
       <div ref={containerRef} style={{ width: "100%", height: "100%", borderRadius: 8 }} />
+      {isModelLoading ? (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            placeItems: "center",
+            background: "rgba(248,250,252,0.8)"
+          }}
+        >
+          <style>
+            {`@keyframes kagemushaAvatarSpin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}`}
+          </style>
+          <div
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "999px",
+              border: "3px solid #cbd5e1",
+              borderTopColor: "#0f172a",
+              animation: "kagemushaAvatarSpin 0.9s linear infinite"
+            }}
+          />
+        </div>
+      ) : null}
       {error ? (
         <div
           style={{
