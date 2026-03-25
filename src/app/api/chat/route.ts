@@ -258,10 +258,17 @@ export async function POST(request: NextRequest) {
     workingSession.inferredIntent = aiResult.inferredIntent ?? workingSession.inferredIntent;
     workingSession.urgency = aiResult.urgency;
     workingSession.needsHuman = aiResult.needsHuman;
-    workingSession.collectedFields = {
-      ...workingSession.collectedFields,
-      ...aiResult.collectedFields
-    };
+    // AI が null を返してもすでに収集済みのフィールドを上書きしない。
+    // AI が "明日の夕方はどうですか" 等を inquiryBody に入れてくることがあるが、
+    // null / 空文字で既存値を消さないようにする。
+    const aiCollected = aiResult.collectedFields as Record<string, unknown> | null;
+    if (aiCollected) {
+      for (const [key, val] of Object.entries(aiCollected)) {
+        if (val !== null && val !== undefined && val !== "") {
+          (workingSession.collectedFields as Record<string, unknown>)[key] = val;
+        }
+      }
+    }
   }
 
   // AI が inferredIntent を確定した後に shouldCollectContact を再評価する。

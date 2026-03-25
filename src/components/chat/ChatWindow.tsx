@@ -179,6 +179,10 @@ export const ChatWindow = ({
   const [ttsEnabled, setTtsEnabled] = useState(
     enableVoice && voiceConfig.enabled && voiceConfig.autoSpeakAssistant
   );
+  // スピーカーのミュート状態（モバイルはデフォルトでミュート = 音は出ないが読み上げは実行）
+  // 初期値は false（非モバイル）。クライアント側 useEffect でモバイル判定後に更新する。
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const speakerMutedRef = useRef(false);
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null
   );
@@ -320,6 +324,16 @@ export const ChatWindow = ({
       } catch {
         return null;
       }
+    }
+  }, []);
+
+  // モバイル端末ではスピーカーをデフォルトでミュートにする（クライアント側でのみ判定）
+  useEffect(() => {
+    if (typeof navigator === "undefined") return;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile) {
+      setSpeakerMuted(true);
+      speakerMutedRef.current = true;
     }
   }, []);
 
@@ -499,6 +513,8 @@ export const ChatWindow = ({
         // iOS Safari で inline 再生するために必須
         audio.setAttribute("playsinline", "");
         audio.setAttribute("webkit-playsinline", "");
+        // スピーカーミュート状態を反映（モバイルデフォルトOFF: 音は出ないが読み上げは実行）
+        audio.muted = speakerMutedRef.current;
         apiAudioRef.current = audio;
         let lipSyncTimer: number | null = null;
         audio.onplay = () => {
@@ -589,6 +605,44 @@ export const ChatWindow = ({
     }
   }, [audioUnlocked]);
 
+  /**
+   * スピーカーボタンの ON/OFF 切り替えハンドラ。
+   * ・ON → 再生中の音声をミュート解除、未再生なら TTS を再試行
+   * ・OFF → 再生を止めずに音声をミュート（読み上げは継続）
+   * これにより「途中でオンオフしても読み上げが止まらない」動作を実現する。
+   */
+  const handleSpeakerToggle = useCallback((wantOn: boolean) => {
+    const newMuted = !wantOn;
+    setSpeakerMuted(newMuted);
+    speakerMutedRef.current = newMuted;
+
+    if (!newMuted) {
+      // スピーカー ON
+      if (apiAudioRef.current) {
+        // 再生中の音声を即時ミュート解除
+        apiAudioRef.current.muted = false;
+      } else {
+        // 再生中でない場合: 最新メッセージを再試行する
+        lastSpokenMessageIdRef.current = null;
+        if (iosAudioUnlockedRef.current) {
+          // iOS オーディオコンテキスト解放済み → ttsEnabled flip で再試行
+          setTtsEnabled((prev) => {
+            if (prev) {
+              requestAnimationFrame(() => setTtsEnabled(true));
+              return false;
+            }
+            return prev;
+          });
+        }
+        // iOS 未解放の場合は onUserInteraction → unlockAudio が silent.play 後に flip する
+      }
+    } else {
+      // スピーカー OFF: 停止せず音だけ消す
+      if (apiAudioRef.current) {
+        apiAudioRef.current.muted = true;
+      }
+    }
+  }, []);
 
   // アシスタントの最新メッセージを1回だけ読み上げる（表示テキストと同一のlatestAssistant.contentを使用）
   useEffect(() => {
@@ -1056,8 +1110,8 @@ export const ChatWindow = ({
           onTranscript={handleVoiceTranscript}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}
-          ttsEnabled={ttsEnabled}
-          onToggleTts={setTtsEnabled}
+          ttsEnabled={!speakerMuted}
+          onToggleTts={handleSpeakerToggle}
           onListeningChange={setIsListening}
           onSpeechDetectedChange={setIsSpeechDetected}
           onUserInteraction={unlockAudio}

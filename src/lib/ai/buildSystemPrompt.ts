@@ -113,6 +113,7 @@ nextFieldRequest 設定ガイド（会話とフォームを同期させるため
 - 名前が取れたら次は「email」、次に「organization」の順で設定する（絶対に null にしない）
 - 日時・用件・予算は会話で収集するため nextFieldRequest は null にする（フォームを出さない）
 - 電話番号は任意。会話で出てきた場合は collectedFields に記録し nextFieldRequest には設定しない
+- collectedFields.inquiryBody は直近のユーザー発話をそのまま入れず、会話全体から読み取れる相談の要旨を簡潔に要約した文章（例:「打ち合わせ希望（明日の夕方）」）にする
 - すべての必須項目（name・email・organization・inquiryBody）が揃ったら confirmSubmit を設定する
 - まだ連絡先収集フェーズでなければ nextFieldRequest は必ず null にする
 - ★重要: 名前を口頭で聞いているターンは必ず nextFieldRequest を name にすること。null のままにしてはいけない
