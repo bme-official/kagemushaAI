@@ -388,7 +388,7 @@ export const VoiceControls = ({
       <style>{`
         @keyframes kagemushaBarBounce {
           from { transform: scaleY(1); opacity: 0.7; }
-          to   { transform: scaleY(1.9); opacity: 1; }
+          to   { transform: scaleY(1.9); transform-origin: center; opacity: 1; }
         }
         @keyframes kagemushaBarThink {
           0%, 100% { opacity: 0.3; background: #e2e8f0; transform: scaleY(0.7); }
