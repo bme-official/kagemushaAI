@@ -83,12 +83,21 @@ const callOpenAI = async (
   if (!content) return null;
 
   try {
-    // GPT がマークダウンコードブロック（```json ... ```）で返す場合に備えて除去する
+    // GPT がマークダウンや前後テキスト付きで返す場合を吸収する:
+    // 1) コードブロック除去 2) 最初の {...} を抽出 3) 直接 parse
     const stripped = content
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```\s*$/i, "")
       .trim();
-    return JSON.parse(stripped) as ChatAgentResult;
+    // 直接 parse を試みる
+    try {
+      return JSON.parse(stripped) as ChatAgentResult;
+    } catch {
+      // テキストが混入している場合は最初の {...} ブロックを取り出す
+      const match = stripped.match(/\{[\s\S]*\}/);
+      if (match) return JSON.parse(match[0]) as ChatAgentResult;
+      return null;
+    }
   } catch {
     return null;
   }
@@ -100,7 +109,17 @@ const buildFallbackReply = (
   nextFieldRequest: StructuredFieldRequest | null
 ) => {
   if (!inputText && nextFieldRequest?.fieldName === "confirmSubmit") {
-    return "ご入力ありがとうございます。以下の内容でよろしければ送信してください。";
+    // 収集済み内容を自然な文章でまとめて表示する
+    const lines: string[] = [];
+    if (collected.name) lines.push(`お名前：${collected.name}`);
+    if (collected.organization) lines.push(`会社名：${collected.organization}`);
+    if (collected.email) lines.push(`メール：${collected.email}`);
+    if (collected.phone) lines.push(`電話番号：${collected.phone}`);
+    if (collected.inquiryBody) lines.push(`ご相談内容：${collected.inquiryBody}`);
+    if (collected.deadline) lines.push(`希望日時：${collected.deadline}`);
+    if (collected.budget) lines.push(`予算感：${collected.budget}`);
+    const summary = lines.length ? `\n${lines.map((l) => `・${l}`).join("\n")}` : "";
+    return `ありがとうございます。以下の内容でよろしければ送信してください。${summary}`;
   }
   if (!inputText && nextFieldRequest) {
     return `${nextFieldRequest.label}を教えていただけますか？`;

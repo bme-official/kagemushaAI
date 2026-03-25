@@ -216,7 +216,7 @@ export const ChatWindow = ({
   useEffect(() => { runtimeAvatarSettingsRef.current = runtimeAvatarSettings; }, [runtimeAvatarSettings]);
   // avatarModelUrl が変わるたびにロード中フラグを立てる。
   // VRM ロードが失敗しても onModelReady が呼ばれない場合のために
-  // 最大 15 秒でフォールバックして loading... を解除する。
+  // 最大 8 秒でフォールバックして loading... を解除する。
   useEffect(() => {
     if (!canRenderVrm) return;
     setAvatarLoading(true);
@@ -224,6 +224,17 @@ export const ChatWindow = ({
     return () => window.clearTimeout(fallbackTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avatarModelUrl]);
+
+  // アバターロード完了時（loading→idle 遷移）に TTS 再試行フラグをリセットする。
+  // iOS では初回 audio.play() がユーザージェスチャー不足で失敗するため、
+  // onError で lastSpokenMessageIdRef が null に戻るが、その後 TTS effect が
+  // 再発火しない。avatarLoading=false になった直後にリセットして
+  // 「アバター表示後すぐ読み上げ開始」を実現する。
+  useEffect(() => {
+    if (!avatarLoading) {
+      lastSpokenMessageIdRef.current = null;
+    }
+  }, [avatarLoading]);
 
   // TTS先行フェッチキャッシュ: postChat でAI応答受信直後にfetch開始し、useEffect発火時に再利用
   const ttsPrefetchRef = useRef<{
@@ -592,7 +603,9 @@ export const ChatWindow = ({
       },
       markAsSpokenId: latestAssistant.id
     });
-  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, speakWithFallback, ttsEnabled]);
+  // avatarLoading を依存に含めることで、ロード完了直後（lastSpokenMessageIdRef=null にリセット済み）
+  // に effect が再発火し、アバター表示後すぐ読み上げが始まる。
+  }, [audioUnlocked, avatarLoading, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, speakWithFallback, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
