@@ -41,6 +41,7 @@ type VoiceControlsProps = {
   ttsEnabled: boolean;
   onToggleTts: (enabled: boolean) => void;
   onListeningChange?: (listening: boolean) => void;
+  onUserInteraction?: () => void;
 };
 
 export const VoiceControls = ({
@@ -48,7 +49,8 @@ export const VoiceControls = ({
   onTranscript,
   ttsEnabled,
   onToggleTts,
-  onListeningChange
+  onListeningChange,
+  onUserInteraction
 }: VoiceControlsProps) => {
   const [isListening, setIsListening] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -61,6 +63,7 @@ export const VoiceControls = ({
   }, []);
 
   const startListening = () => {
+    onUserInteraction?.();
     if (!hasSpeechRecognition) {
       setUnsupportedMessage("このブラウザは音声入力に対応していません。");
       return;
@@ -128,7 +131,10 @@ export const VoiceControls = ({
       </button>
       <button
         type="button"
-        onClick={() => onToggleTts(!ttsEnabled)}
+        onClick={() => {
+          onUserInteraction?.();
+          onToggleTts(!ttsEnabled);
+        }}
         disabled={disabled || !voiceConfig.ttsEnabled}
       >
         {ttsEnabled ? "読み上げON" : "読み上げOFF"}
