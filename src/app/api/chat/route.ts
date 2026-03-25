@@ -221,7 +221,9 @@ export async function POST(request: NextRequest) {
       });
       // 3文字以上の発話は inquiryBody の候補として記録する。
       // 「打ち合わせしよう」(8文字)等の短い意図表明もカバーするため閾値を引き下げ。
-      if (!workingSession.collectedFields.inquiryBody && userText.length >= 3) {
+      // ただし completed 後の最初のメッセージ（wasCompletedPhase）では自動設定しない。
+      // 保持された連絡先 + 自動 inquiryBody で即座に confirming になるのを防ぐ。
+      if (!wasCompletedPhase && !workingSession.collectedFields.inquiryBody && userText.length >= 3) {
         workingSession.collectedFields.inquiryBody = userText;
       }
     }

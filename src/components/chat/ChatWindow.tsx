@@ -1167,6 +1167,7 @@ export const ChatWindow = ({
           onUserInteraction={unlockAudio}
           mode={viewMode === "voice" ? "overlay" : "inline"}
           statusLabel={avatarBehavior.statusLabel}
+          isTtsSpeaking={isSpeaking}
         />
       ) : null}
 

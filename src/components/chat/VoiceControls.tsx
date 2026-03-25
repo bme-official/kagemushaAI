@@ -55,6 +55,8 @@ type VoiceControlsProps = {
   onUserInteraction?: () => void;
   mode?: "overlay" | "inline";
   statusLabel?: string;
+  /** iOS TTS再生中フラグ: true の間はマイクを停止してエコーを防ぐ */
+  isTtsSpeaking?: boolean;
 };
 
 export const VoiceControls = ({
@@ -68,7 +70,8 @@ export const VoiceControls = ({
   onSpeechDetectedChange,
   onUserInteraction,
   mode = "overlay",
-  statusLabel = "idle"
+  statusLabel = "idle",
+  isTtsSpeaking = false
 }: VoiceControlsProps) => {
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -76,6 +79,8 @@ export const VoiceControls = ({
   const shouldKeepListeningRef = useRef(false);
   // onstart が発火したかどうかのフラグ。発火しないまま onend が来たら許可ダイアログ後の失敗と判定
   const recognitionStartedRef = useRef(false);
+  // TTS 再生中に一時停止したかどうかのフラグ（エコー対策）
+  const suppressedForTtsRef = useRef(false);
   const restartTimeoutRef = useRef<number | null>(null);
   const speechIdleTimeoutRef = useRef<number | null>(null);
 
@@ -231,6 +236,7 @@ export const VoiceControls = ({
       setIsSpeechDetected(false);
       callbacksRef.current.onListeningChange?.(false);
       callbacksRef.current.onSpeechDetectedChange?.(false);
+      if (suppressedForTtsRef.current) return; // TTS 抑制中は再起動しない
       if (shouldKeepListeningRef.current && !disabled) {
         // onstart が発火しないまま onend が来た = 許可ダイアログ後に認識が開始されなかったケース
         // ジェスチャー文脈が失われているため自動再起動できない。マイクを OFF にして再タップを促す。
@@ -241,7 +247,6 @@ export const VoiceControls = ({
           return;
         }
         clearRestartTimer();
-        // iOS は onend が頻繁に発火するため少し余裕を持たせる
         const restartDelay = /iphone|ipad|ipod/i.test(navigator.userAgent) ? 300 : 80;
         restartTimeoutRef.current = window.setTimeout(() => {
           startListening();
@@ -291,6 +296,31 @@ export const VoiceControls = ({
     // アンマウント時は別途専用エフェクトで止める。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, disabled, isIOS]);
+
+  // iOS: TTS 再生中はマイクを一時停止してエコー（スピーカー音をマイクが拾う）を防ぐ
+  useEffect(() => {
+    if (!isIOS) return;
+    if (isTtsSpeaking) {
+      // TTS 開始 → 認識を一時停止
+      suppressedForTtsRef.current = true;
+      clearRestartTimer();
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch { /* ignore */ }
+      }
+    } else if (suppressedForTtsRef.current) {
+      // TTS 終了 → 残響が収まるのを待ってから再開 (600ms)
+      suppressedForTtsRef.current = false;
+      if (micEnabled && !disabled) {
+        clearRestartTimer();
+        restartTimeoutRef.current = window.setTimeout(() => {
+          if (!suppressedForTtsRef.current) {
+            startListening();
+          }
+        }, 600);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTtsSpeaking, isIOS]);
 
   // アンマウント時のみ停止（エフェクト入れ替え時に止まらないよう分離）
   useEffect(() => {
