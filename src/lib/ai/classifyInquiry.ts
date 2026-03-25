@@ -15,6 +15,11 @@ const INTENT_KEYWORD_ALIASES: Record<string, string[]> = {
   資料請求: ["資料", "パンフ", "カタログ"]
 };
 
+/** このインテントが確定したら連絡先収集フローを開始する（一般的な質問は除外） */
+const CONTACT_REQUIRED_INTENTS = [
+  "制作相談", "見積もり相談", "日程調整", "業務提携", "導入相談", "資料請求", "打ち合わせ希望"
+];
+
 export const classifyInquiry = ({ userText }: ClassificationInput) => {
   const text = userText.toLowerCase();
 
@@ -48,10 +53,15 @@ export const classifyInquiry = ({ userText }: ClassificationInput) => {
       text.includes(k.toLowerCase())
     );
 
+  const shouldCollectContact = inferredIntent
+    ? CONTACT_REQUIRED_INTENTS.some((intent) => inferredIntent.includes(intent))
+    : false;
+
   return {
     inferredIntent,
     inferredCategory,
     urgency: urgency as "low" | "medium" | "high",
-    needsHuman
+    needsHuman,
+    shouldCollectContact
   };
 };

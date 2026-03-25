@@ -240,10 +240,11 @@ export async function POST(request: NextRequest) {
 
   const latestText = body.userInput || body.fieldResponse?.value || "";
   const inputMode = body.inputMode ?? "text";
+  const resultFromRule = classifyInquiry({ userText: latestText });
   const shouldCollectContact =
     workingSession.phase === "confirming" ||
-    /送信|保存|この内容|以上|確定|提出|登録/.test(latestText);
-  const resultFromRule = classifyInquiry({ userText: latestText });
+    /送信|保存|この内容|以上|確定|提出|登録/.test(latestText) ||
+    resultFromRule.shouldCollectContact;
   workingSession.inferredIntent = workingSession.inferredIntent ?? resultFromRule.inferredIntent;
   workingSession.inferredCategory =
     workingSession.inferredCategory ?? resultFromRule.inferredCategory;
@@ -272,18 +273,23 @@ export async function POST(request: NextRequest) {
   }
 
   // AI が inferredIntent を確定した後に shouldCollectContact を再評価する。
-  // ユーザーが「送信」などを言わなくても、相談内容と意図が揃えば連絡先収集を開始する。
-  // また AI が nextFieldRequest を返している場合も収集フェーズと判断する（短い発話でも対応）。
-  // さらに name/email/organization のいずれかが既に収集済みなら無条件で継続する。
+  // 一般的な質問（「サービスについて教えて」など）では収集を開始しないよう、
+  // 連絡先収集が必要な意図のみ対象にする。
+  // name/email/organization のいずれかが収集済みなら無条件で継続する。
   const contactFieldsStarted = Boolean(
     workingSession.collectedFields.name ||
     workingSession.collectedFields.email ||
     workingSession.collectedFields.organization
   );
+  const CONTACT_COLLECTION_INTENTS = [
+    "制作相談", "見積もり相談", "日程調整", "業務提携", "導入相談", "資料請求", "打ち合わせ希望"
+  ];
+  const intentWarrantsContact = workingSession.inferredIntent
+    ? CONTACT_COLLECTION_INTENTS.some((intent) => workingSession.inferredIntent!.includes(intent))
+    : false;
   const finalShouldCollectContact =
     shouldCollectContact ||
-    Boolean(workingSession.collectedFields.inquiryBody && workingSession.inferredIntent) ||
-    Boolean(workingSession.collectedFields.inquiryBody && aiResult?.nextFieldRequest) ||
+    intentWarrantsContact ||
     contactFieldsStarted;
 
   const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {

@@ -34,13 +34,13 @@ export const getNextFieldRequest = (
     }
   }
 
-  // AI が会話文脈から適切なフィールドを示唆している場合は、条件チェックより先に優先する。
-  // これにより「打ち合わせしたいな」など inferredIntent が取れない発話でも
-  // AI が name を指定すれば入力欄が必ず表示される。
+  // AI が会話文脈から適切なフィールドを示唆している場合は優先する。
+  // ただし shouldCollectContact が true の場合のみ（一般的な質問では無視する）。
   const aiField = context?.aiSuggestedField;
   if (
     aiField &&
     aiField.fieldName !== "confirmSubmit" &&
+    context?.shouldCollectContact &&
     !collected[aiField.fieldName as keyof CollectedContactFields] &&
     !(isVoice && VOICE_ONLY_FIELDS.has(aiField.fieldName))
   ) {
