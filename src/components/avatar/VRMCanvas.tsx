@@ -15,6 +15,7 @@ type VRMCanvasProps = {
 export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const behaviorRef = useRef<AvatarBehaviorState>(behavior);
+  const onModelReadyRef = useRef<typeof onModelReady>(onModelReady);
   const currentVrmRef = useRef<VRM | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(true);
@@ -22,6 +23,10 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
   useEffect(() => {
     behaviorRef.current = behavior;
   }, [behavior]);
+
+  useEffect(() => {
+    onModelReadyRef.current = onModelReady;
+  }, [onModelReady]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -197,7 +202,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
         currentVrmRef.current = vrm;
         setIsModelLoading(false);
         setError(null);
-        onModelReady?.();
+        onModelReadyRef.current?.();
       },
       undefined,
       () => {
@@ -222,7 +227,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
         container.removeChild(renderer.domElement);
       }
     };
-  }, [modelUrl, onModelReady]);
+  }, [modelUrl]);
 
   return (
     <div style={{ width: "100%", height: "100%", minHeight: 240, position: "relative" }}>

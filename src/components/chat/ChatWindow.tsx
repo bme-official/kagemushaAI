@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { characterConfig } from "@/config/character.config";
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { uiConfig } from "@/config/ui.config";
@@ -119,16 +119,39 @@ export const ChatWindow = ({
     Boolean(avatarRuntimeConfig.modelUrl) &&
     avatarRuntimeConfig.modelUrl.toLowerCase().endsWith(".vrm");
 
+  const trySpeakOpeningGreeting = useCallback(() => {
+    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
+    if (!avatarReady || hasSpokenOpeningRef.current) return;
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (latestAssistant) {
+      lastSpokenMessageIdRef.current = latestAssistant.id;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(characterConfig.greeting);
+    utterance.lang = voiceConfig.locale;
+    utterance.rate = voiceConfig.speechRate;
+    utterance.pitch = voiceConfig.speechPitch;
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      hasSpokenOpeningRef.current = true;
+    };
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }, [audioUnlocked, avatarReady, enableVoice, latestAssistant, ttsEnabled]);
+
   const unlockAudio = () => {
     if (!audioUnlocked) {
       setAudioUnlocked(true);
     }
+    window.setTimeout(() => {
+      trySpeakOpeningGreeting();
+    }, 0);
   };
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (!hasSpokenOpeningRef.current) return;
 
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
@@ -151,23 +174,8 @@ export const ChatWindow = ({
   }, [audioUnlocked, initialAudioUnlocked]);
 
   useEffect(() => {
-    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
-    if (!avatarReady || hasSpokenOpeningRef.current) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(characterConfig.greeting);
-    utterance.lang = voiceConfig.locale;
-    utterance.rate = voiceConfig.speechRate;
-    utterance.pitch = voiceConfig.speechPitch;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(utterance);
-    hasSpokenOpeningRef.current = true;
-    if (latestAssistant) {
-      lastSpokenMessageIdRef.current = latestAssistant.id;
-    }
-  }, [audioUnlocked, avatarReady, enableVoice, latestAssistant, ttsEnabled]);
+    trySpeakOpeningGreeting();
+  }, [trySpeakOpeningGreeting]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
@@ -301,6 +309,12 @@ export const ChatWindow = ({
       }
     });
   };
+
+  const shouldShowTextInput =
+    (viewMode === "text" || !enableVoice) &&
+    session.phase === "collecting" &&
+    !nextFieldRequest &&
+    !isLoading;
 
   return (
     <section
@@ -453,7 +467,7 @@ export const ChatWindow = ({
         />
       ) : (
         <>
-          {viewMode === "text" || !enableVoice ? (
+          {shouldShowTextInput ? (
             <ChatInput onSend={handleMessageSend} disabled={isLoading} />
           ) : null}
         </>
