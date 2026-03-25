@@ -26,7 +26,9 @@ export const inquiryConfig = {
   inquiryIntents: [
     "制作相談",
     "見積もり相談",
+    "日程調整",
     "業務提携",
+    "導入相談",
     "サービスに関する質問",
     "資料請求",
     "その他"
