@@ -184,7 +184,7 @@ export const ChatWindow = ({
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
-  const [needsAudioStart, setNeedsAudioStart] = useState(false);
+  const [needsAudioStart, setNeedsAudioStart] = useState(enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
@@ -200,18 +200,6 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!enableVoice) return;
-    const ua = window.navigator.userAgent || "";
-    const isIOS =
-      /iPhone|iPad|iPod/i.test(ua) ||
-      (ua.includes("Macintosh") && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1);
-    if (isIOS) {
-      setNeedsAudioStart(true);
-    }
-  }, [enableVoice]);
 
   const applyRuntimeSettings = useCallback((parsed: RuntimeAvatarSettings | null | undefined) => {
     if (!parsed) return;
@@ -445,6 +433,7 @@ export const ChatWindow = ({
         }
         utterance.onstart = () => {
           started = true;
+          setNeedsAudioStart(false);
           if (startTimeout !== null) {
             window.clearTimeout(startTimeout);
             startTimeout = null;
@@ -553,7 +542,6 @@ export const ChatWindow = ({
   }, [audioUnlocked, trySpeakOpeningGreeting]);
 
   const handleStartVoiceChat = useCallback(() => {
-    setNeedsAudioStart(false);
     setTtsEnabled(true);
     if (voiceConfig.sttEnabled) {
       setMicEnabled(true);
