@@ -27,7 +27,7 @@ const createInitialSession = (): ChatSessionState => {
       role: "assistant",
       kind: "text",
       // デフォルト設定で自己紹介付き挨拶を生成（設定ロード後はopeningMessageOverrideで上書き）
-      content: `こんにちは、${companyConfig.name}のお問い合わせサポート担当${characterConfig.name}です。どのようなご相談でもお気軽にお聞かせください。`,
+      content: `こんにちは、${companyConfig.name}のAIコンシェルジュ、${characterConfig.name}です。どのようなご相談でもお気軽にお聞かせください。`,
       createdAt: new Date().toISOString()
     }
   ];
@@ -254,8 +254,9 @@ export const ChatWindow = ({
     const runtimeCompany = parsed.companyName || "影武者AI";
     const runtimeName = parsed.avatarName || characterConfig.name;
     const primaryService = parsed.services?.find((s) => s.name)?.name;
-    const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
-    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当${runtimeName}です。${serviceSuffix}どのようなご相談でもお気軽にお聞かせください。`;
+    // サービス名を役職として使い「〇〇のAIコンシェルジュ、Leoです」形式にする
+    const roleLabel = primaryService ?? "AIコンシェルジュ";
+    const openingMessage = `こんにちは、${runtimeCompany}の${roleLabel}、${runtimeName}です。どのようなご相談でもお気軽にお聞かせください。`;
     // session.messages を変更せず表示用オーバーライドとして挨拶文を保持する
     // → session は postChat の setSession 上書きに左右されず履歴が変わらなくなる
     setOpeningMessageOverride(openingMessage);

@@ -94,6 +94,9 @@ const buildFallbackReply = (
   collected: CollectedContactFields,
   nextFieldRequest: StructuredFieldRequest | null
 ) => {
+  if (!inputText && nextFieldRequest?.fieldName === "confirmSubmit") {
+    return "ご入力ありがとうございます。以下の内容でよろしければ送信してください。";
+  }
   if (!inputText && nextFieldRequest) {
     return `${nextFieldRequest.label}を教えていただけますか？`;
   }
@@ -268,11 +271,8 @@ export async function POST(request: NextRequest) {
     workingSession.phase = "collecting";
   }
 
-  const assistantTextRaw =
-    aiResult?.reply ??
-    buildFallbackReply(userText, workingSession.collectedFields, nextFieldRequest);
-  const assistantText = applyAvatarIdentityToReply(assistantTextRaw, effectiveAvatarSettings);
-
+  // finalNextFieldRequest を先に確定してから fallback テキストに渡す。
+  // これにより phase === "confirming" 時の fallback が confirmSubmit を認識できる。
   let finalNextFieldRequest = nextFieldRequest;
   if (workingSession.phase === "confirming") {
     finalNextFieldRequest = {
@@ -283,6 +283,11 @@ export async function POST(request: NextRequest) {
       required: true
     };
   }
+
+  const assistantTextRaw =
+    aiResult?.reply ??
+    buildFallbackReply(userText, workingSession.collectedFields, finalNextFieldRequest);
+  const assistantText = applyAvatarIdentityToReply(assistantTextRaw, effectiveAvatarSettings);
 
   const assistantMessage: ConversationMessage = {
     id: crypto.randomUUID(),
