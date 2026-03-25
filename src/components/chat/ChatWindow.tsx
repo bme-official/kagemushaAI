@@ -59,15 +59,6 @@ type ChatApiResponse = {
   nextFieldRequest: StructuredFieldRequest | null;
 };
 
-const serviceMentionPrefix = (settings: RuntimeAvatarSettings) => {
-  const serviceName = settings.services?.find((service) => service.name)?.name;
-  const companyName = settings.companyName;
-  const avatarName = settings.avatarName;
-  if (!serviceName && !companyName && !avatarName) return "";
-  const chunks = [avatarName, companyName, serviceName].filter(Boolean);
-  return `【${chunks.join(" / ")}】 `;
-};
-
 const applyIdentityMention = (text: string, settings: RuntimeAvatarSettings) => {
   const serviceName = settings.services?.find((service) => service.name)?.name;
   const hasIdentityMention = [
@@ -78,7 +69,15 @@ const applyIdentityMention = (text: string, settings: RuntimeAvatarSettings) => 
     .filter(Boolean)
     .some((token) => text.includes(token as string));
   if (hasIdentityMention) return text;
-  return `${serviceMentionPrefix(settings)}${text}`;
+  if (/どのようなご相談ですか\??/.test(text)) {
+    const companyName = settings.companyName;
+    const avatarName = settings.avatarName;
+    if (companyName && avatarName) {
+      return `どのようなご相談でしょうか？ ${companyName}の${avatarName}が丁寧にお伺いします。`;
+    }
+    return "どのようなご相談でしょうか？ 丁寧にお伺いします。";
+  }
+  return text;
 };
 
 const normalizeAssistantText = (text: string, settings: RuntimeAvatarSettings) => {
@@ -185,6 +184,7 @@ export const ChatWindow = ({
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
+  const [needsAudioStart, setNeedsAudioStart] = useState(false);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
@@ -200,6 +200,18 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!enableVoice) return;
+    const ua = window.navigator.userAgent || "";
+    const isIOS =
+      /iPhone|iPad|iPod/i.test(ua) ||
+      (ua.includes("Macintosh") && typeof navigator !== "undefined" && navigator.maxTouchPoints > 1);
+    if (isIOS) {
+      setNeedsAudioStart(true);
+    }
+  }, [enableVoice]);
 
   const applyRuntimeSettings = useCallback((parsed: RuntimeAvatarSettings | null | undefined) => {
     if (!parsed) return;
@@ -539,6 +551,15 @@ export const ChatWindow = ({
     }
     trySpeakOpeningGreeting();
   }, [audioUnlocked, trySpeakOpeningGreeting]);
+
+  const handleStartVoiceChat = useCallback(() => {
+    setNeedsAudioStart(false);
+    setTtsEnabled(true);
+    if (voiceConfig.sttEnabled) {
+      setMicEnabled(true);
+    }
+    unlockAudio();
+  }, [unlockAudio]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
@@ -907,6 +928,34 @@ export const ChatWindow = ({
             }}
           >
             テキストチャット
+          </button>
+        </div>
+      ) : null}
+
+      {enableVoice && needsAudioStart ? (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderBottom: "1px solid #e2e8f0",
+            background: "#f8fafc",
+            display: "flex",
+            justifyContent: "center"
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleStartVoiceChat}
+            style={{
+              border: "1px solid #0f172a",
+              borderRadius: 999,
+              background: "#0f172a",
+              color: "#fff",
+              padding: "8px 14px",
+              fontSize: 13,
+              cursor: "pointer"
+            }}
+          >
+            チャットを開始（音声を有効化）
           </button>
         </div>
       ) : null}

@@ -105,10 +105,11 @@ const applyAvatarIdentityToReply = (
   const hasMention = [companyName, avatarName, serviceName]
     .filter(Boolean)
     .some((token) => next.includes(token as string));
-  if (!hasMention) {
-    const tokens = [avatarName, companyName, serviceName].filter(Boolean);
-    if (tokens.length) {
-      next = `【${tokens.join(" / ")}】 ${next}`;
+  if (!hasMention && /どのようなご相談ですか\??/.test(next)) {
+    if (companyName && avatarName) {
+      next = `どのようなご相談でしょうか？ ${companyName}の${avatarName}が丁寧にお伺いします。`;
+    } else {
+      next = "どのようなご相談でしょうか？ 丁寧にお伺いします。";
     }
   }
   return next;
