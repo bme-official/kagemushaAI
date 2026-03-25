@@ -218,16 +218,22 @@ export async function POST(request: NextRequest) {
     };
   }
 
+  // AI が inferredIntent を確定した後に shouldCollectContact を再評価する。
+  // ユーザーが「送信」などを言わなくても、相談内容と意図が揃えば連絡先収集を開始する。
+  const finalShouldCollectContact =
+    shouldCollectContact ||
+    Boolean(workingSession.collectedFields.inquiryBody && workingSession.inferredIntent);
+
   const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {
     inferredIntent: workingSession.inferredIntent,
-    shouldCollectContact,
+    shouldCollectContact: finalShouldCollectContact,
     inputMode
   });
   const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
     Boolean(workingSession.collectedFields[field])
   );
 
-  if (!nextFieldRequest && hasRequired && shouldCollectContact) {
+  if (!nextFieldRequest && hasRequired && finalShouldCollectContact) {
     workingSession.phase = "confirming";
     workingSession.summaryDraft = summarizeInquiry(workingSession);
   } else {

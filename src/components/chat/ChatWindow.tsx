@@ -211,6 +211,9 @@ export const ChatWindow = ({
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
   const conversationStartedRef = useRef(false);
+  // runtimeAvatarSettings を常に最新値で参照するための ref（speakViaTtsApi クロージャ内でよみがな置換に使用）
+  const runtimeAvatarSettingsRef = useRef(runtimeAvatarSettings);
+  useEffect(() => { runtimeAvatarSettingsRef.current = runtimeAvatarSettings; }, [runtimeAvatarSettings]);
   // avatarModelUrl が変わるたびにロード中フラグを立てる
   useEffect(() => {
     if (canRenderVrm) setAvatarLoading(true);
@@ -444,8 +447,10 @@ export const ChatWindow = ({
       const myApiCall = ++apiCallCounterRef.current;
       stopApiAudio();
       try {
-        const apiVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
-        const ttsText = normalizeTtsText(text, runtimeAvatarSettings).slice(0, 800);
+        // ref 経由で最新の設定を取得（stale closure によるよみがな未反映を防ぐ）
+        const latestSettings = runtimeAvatarSettingsRef.current;
+        const apiVoice = latestSettings.ttsApiVoice || "nova";
+        const ttsText = normalizeTtsText(text, latestSettings).slice(0, 800);
 
         // 先行フェッチキャッシュがあれば再利用（postChatで先行開始済みのリクエスト）
         const prefetch = ttsPrefetchRef.current;
@@ -502,7 +507,7 @@ export const ChatWindow = ({
         if (apiCallCounterRef.current === myApiCall) handlers.onError();
       }
     },
-    [stopApiAudio, runtimeAvatarSettings.ttsApiVoice]
+    [stopApiAudio]
   );
 
   const speakWithFallback = useCallback(

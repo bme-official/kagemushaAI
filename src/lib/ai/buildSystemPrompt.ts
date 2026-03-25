@@ -52,20 +52,20 @@ export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings)
       });
   }
 
-  // 設定済みサービス一覧があればそれを優先。なければデフォルトの事業カテゴリを使う
+  // 設定済みサービスのみ使用。未設定の場合はハードコードを使わず「未設定」として案内する
   const configuredServices = runtimeAvatarSettings?.services?.filter((s) => s.name) ?? [];
   const serviceLines = configuredServices.length
     ? configuredServices.map((s) =>
         `  - ${s.name}${s.ruby ? `（${s.ruby}）` : ""}${s.description ? `: ${s.description}` : ""}`
       ).join("\n")
-    : companyConfig.businessCategories.map((c) => `  - ${c}`).join("\n");
+    : "  - （サービス未設定：詳細はお問い合わせください）";
 
-  // 説明文：設定済みサービスがある場合は services から生成し、description との矛盾を防ぐ
+  // 説明文：設定済みサービスがある場合は services から生成。未設定なら汎用文のみ（ハードコード不使用）
   const description = runtimeAvatarSettings?.profile
     ? runtimeAvatarSettings.profile
     : configuredServices.length
       ? `${runtimeCompanyName}では${configuredServices.map((s) => s.name).join("、")}を提供しています。`
-      : companyConfig.description;
+      : `${runtimeCompanyName}のサポート窓口です。詳細はお問い合わせください。`;
 
   return `
 あなたは${runtimeCompanyName}の問い合わせサポートキャラクター「${runtimeName}」です。
