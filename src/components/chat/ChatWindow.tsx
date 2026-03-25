@@ -496,6 +496,8 @@ export const ChatWindow = ({
     if (!isEmbedVisible) return;
     if ((canRenderVrm && !avatarReady) || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    // 既に再生中・キューに入っている場合はキャンセルしない
+    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) return;
     speakWithFallback(getOpeningGreetingText(), {
       onStart: () => {
         setIsSpeaking(true);
@@ -548,49 +550,34 @@ export const ChatWindow = ({
     }
     setAudioUnlocked(true);
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
-    const text = getOpeningGreetingText();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = voiceConfig.locale;
-    utterance.rate = voiceConfig.speechRate;
-    utterance.pitch = voiceConfig.speechPitch;
-    applyConfiguredVoice(utterance);
-    utterance.onstart = () => {
-      setNeedsAudioStart(false);
-      setIsSpeaking(true);
-      pulseAssistantLipSync();
-      hasSpokenOpeningRef.current = true;
-      if (latestAssistant) {
-        lastSpokenMessageIdRef.current = latestAssistant.id;
-      }
-    };
-    utterance.onboundary = () => pulseAssistantLipSync();
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      setAssistantLipSyncActive(false);
-      setNeedsAudioStart(true);
-    };
-
-    try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(utterance);
-      window.setTimeout(() => {
-        trySpeakOpeningGreeting();
-      }, 300);
-    } catch {
-      setNeedsAudioStart(true);
-    }
+    // speakWithFallback はメインパスで speak() を同期的に呼ぶためユーザージェスチャーが保持される
+    speakWithFallback(getOpeningGreetingText(), {
+      onStart: () => {
+        setNeedsAudioStart(false);
+        setIsSpeaking(true);
+        pulseAssistantLipSync();
+        hasSpokenOpeningRef.current = true;
+        if (latestAssistant) {
+          lastSpokenMessageIdRef.current = latestAssistant.id;
+        }
+      },
+      onBoundary: () => pulseAssistantLipSync(),
+      onEnd: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+        setAssistantLipSyncActive(false);
+        setNeedsAudioStart(true);
+      },
+      markAsSpokenId: latestAssistant?.id
+    });
   }, [
-    applyConfiguredVoice,
     getOpeningGreetingText,
     latestAssistant,
     pulseAssistantLipSync,
-    trySpeakOpeningGreeting
+    speakWithFallback
   ]);
 
   useEffect(() => {
