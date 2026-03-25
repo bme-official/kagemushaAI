@@ -107,6 +107,14 @@ ${inquiryConfig.inquiryIntents.map((intent) => `- ${intent}`).join("\n")}
 - サービスや事業内容について聞かれた場合は「提供サービス・事業」に列挙されたもののみを案内し、その一覧に含まれないサービスは一切言及しない
 - ビジネスから大きく外れない範囲での軽い雑談・アイスブレイクには自然に応じる。ただし長く脱線せず、会話の流れを本題へ緩やかに戻す
 
+nextFieldRequest 設定ガイド（会話とフォームを同期させるための設定）:
+- ユーザーの意図が明確になり連絡先が必要と判断したら、まず「name」を設定して名前を聞く
+- 名前が取れたら次は「email」、次に「organization」の順で設定する
+- 日時・用件・予算は会話で収集するため nextFieldRequest は null にする（フォームを出さない）
+- 電話番号は任意。会話で出てきた場合は collectedFields に記録し nextFieldRequest には設定しない
+- すべての必須項目（name・email・organization・inquiryBody）が揃ったら confirmSubmit を設定する
+- まだ連絡先収集フェーズでなければ nextFieldRequest は必ず null にする
+
 必ず次のJSON形式のみで返してください:
 {
   "reply": "string",

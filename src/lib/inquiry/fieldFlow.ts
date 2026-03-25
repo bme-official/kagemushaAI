@@ -1,20 +1,27 @@
 import { inquiryConfig } from "@/config/inquiry.config";
 import type { CollectedContactFields, StructuredFieldRequest } from "@/types/chat";
 
+const VOICE_ONLY_FIELDS = new Set(
+  inquiryConfig.fieldCollection.filter((f) => f.voiceOnly).map((f) => f.fieldName)
+);
+
 export const getNextFieldRequest = (
   collected: CollectedContactFields,
   context?: {
     inferredIntent?: string | null;
     shouldCollectContact?: boolean;
     inputMode?: "voice" | "text";
+    /** AI が JSON で返した nextFieldRequest を会話流れのヒントとして利用 */
+    aiSuggestedField?: StructuredFieldRequest | null;
   }
 ): StructuredFieldRequest | null => {
-  // 会話文脈のない必須情報の押し付けを避けるため、
-  // まず問い合わせ本文の補足（when_missing）を優先して確認する。
-  const shouldSkipInquiryBodyPrompt = context?.inputMode === "voice";
+  const isVoice = context?.inputMode === "voice";
+
+  // ボイスモードでは voiceOnly フィールドのフォーム表示をスキップ。
+  // when_missing かつ voiceOnly のフィールドは会話で収集するため表示しない。
   for (const field of inquiryConfig.fieldCollection) {
-    const value = collected[field.fieldName];
-    if (shouldSkipInquiryBodyPrompt && field.fieldName === "inquiryBody") continue;
+    const value = collected[field.fieldName as keyof CollectedContactFields];
+    if (isVoice && VOICE_ONLY_FIELDS.has(field.fieldName)) continue;
     if (field.required && field.showTiming === "when_missing" && !value) {
       return {
         kind: "field_request",
@@ -27,18 +34,29 @@ export const getNextFieldRequest = (
     }
   }
 
-  // 問い合わせ本文が揃ってから、送信に必要な必須項目のみ収集する。
+  // 問い合わせ本文と意図が揃ってから連絡先情報を収集する。
   const canAskIdentityFields = Boolean(
     collected.inquiryBody && context?.inferredIntent && context?.shouldCollectContact
   );
+  if (!canAskIdentityFields) return null;
+
+  // AI が会話文脈から適切なフィールドを示唆している場合はそれを優先する。
+  // ただし既に収集済みのフィールドは除外し、voiceOnly フィールドはボイスモードでスキップ。
+  const aiField = context?.aiSuggestedField;
+  if (
+    aiField &&
+    aiField.fieldName !== "confirmSubmit" &&
+    !collected[aiField.fieldName as keyof CollectedContactFields] &&
+    !(isVoice && VOICE_ONLY_FIELDS.has(aiField.fieldName))
+  ) {
+    return aiField;
+  }
+
+  // AI 示唆がない・使えない場合は固定順序で次の未収集フィールドを返す。
   for (const field of inquiryConfig.fieldCollection) {
-    const value = collected[field.fieldName];
-    if (
-      field.required &&
-      field.showTiming !== "when_missing" &&
-      !value &&
-      canAskIdentityFields
-    ) {
+    const value = collected[field.fieldName as keyof CollectedContactFields];
+    if (isVoice && VOICE_ONLY_FIELDS.has(field.fieldName)) continue;
+    if (field.required && field.showTiming !== "when_missing" && !value) {
       return {
         kind: "field_request",
         fieldName: field.fieldName,

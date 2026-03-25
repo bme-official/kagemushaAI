@@ -227,7 +227,9 @@ export async function POST(request: NextRequest) {
   const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {
     inferredIntent: workingSession.inferredIntent,
     shouldCollectContact: finalShouldCollectContact,
-    inputMode
+    inputMode,
+    // AI が会話文脈から示唆したフィールドをヒントとして渡す（会話とフォームの同期）
+    aiSuggestedField: aiResult?.nextFieldRequest ?? null
   });
   const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
     Boolean(workingSession.collectedFields[field])

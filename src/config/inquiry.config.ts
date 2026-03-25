@@ -18,6 +18,8 @@ export type InquiryFieldConfig = {
     | "after_intent_guess"
     | "before_confirm"
     | "when_missing";
+  /** ボイスモードでは会話で収集するためフォーム入力欄を表示しない */
+  voiceOnly?: boolean;
 };
 
 export const inquiryConfig = {
@@ -44,17 +46,18 @@ export const inquiryConfig = {
   },
   fieldCollection: [
     {
-      fieldName: "organization",
-      inputType: "text",
-      label: "会社名",
-      placeholder: "例) 株式会社影武者AI",
+      fieldName: "inquiryBody",
+      inputType: "textarea",
+      label: "お問い合わせ内容の補足",
+      placeholder: "ご希望内容、背景、困りごとなど",
       required: true,
-      showTiming: "before_confirm"
+      showTiming: "when_missing",
+      voiceOnly: true
     },
     {
       fieldName: "name",
       inputType: "text",
-      label: "個人名",
+      label: "お名前",
       placeholder: "例) 山田 太郎",
       required: true,
       showTiming: "after_intent_guess"
@@ -62,8 +65,16 @@ export const inquiryConfig = {
     {
       fieldName: "email",
       inputType: "email",
-      label: "連絡先（メール）",
-      placeholder: "example@company.com または連絡が取れるメール",
+      label: "メールアドレス",
+      placeholder: "example@company.com",
+      required: true,
+      showTiming: "after_intent_guess"
+    },
+    {
+      fieldName: "organization",
+      inputType: "text",
+      label: "会社名",
+      placeholder: "例) 株式会社影武者AI",
       required: true,
       showTiming: "after_intent_guess"
     },
@@ -73,29 +84,22 @@ export const inquiryConfig = {
       label: "電話番号",
       placeholder: "09012345678",
       required: false,
-      showTiming: "before_confirm"
+      showTiming: "after_intent_guess"
     },
     {
-      fieldName: "inquiryBody",
-      inputType: "textarea",
-      label: "お問い合わせ内容の補足",
-      placeholder: "ご希望内容、背景、困りごとなど",
-      required: true,
-      showTiming: "when_missing"
+      fieldName: "deadline",
+      inputType: "text",
+      label: "ご希望日時",
+      placeholder: "例) 明日の午後3時",
+      required: false,
+      showTiming: "after_intent_guess",
+      voiceOnly: true
     },
     {
       fieldName: "budget",
       inputType: "text",
       label: "予算感",
       placeholder: "例) 30万円前後",
-      required: false,
-      showTiming: "before_confirm"
-    },
-    {
-      fieldName: "deadline",
-      inputType: "text",
-      label: "納期感",
-      placeholder: "例) 2か月以内",
       required: false,
       showTiming: "before_confirm"
     }
