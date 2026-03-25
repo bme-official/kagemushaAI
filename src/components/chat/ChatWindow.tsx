@@ -334,11 +334,9 @@ export const ChatWindow = ({
     });
   };
 
-  const shouldShowTextInput = !enableVoice && session.phase === "collecting" && !nextFieldRequest && !isLoading;
-
   return (
     <section
-      style={{ height: "100%", display: "flex", flexDirection: "column" }}
+      style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}
       onPointerDown={unlockAudio}
     >
       <div
@@ -378,7 +376,7 @@ export const ChatWindow = ({
               cursor: "pointer"
             }}
           >
-            音声会話
+            ボイスチャット
           </button>
           <button
             type="button"
@@ -392,7 +390,7 @@ export const ChatWindow = ({
               cursor: "pointer"
             }}
           >
-            テキスト履歴
+            テキストチャット
           </button>
         </div>
       ) : null}
@@ -437,18 +435,6 @@ export const ChatWindow = ({
                   VRMモデルURLを設定すると音声会話画面にアバターを表示します。
                 </div>
               )}
-              <VoiceControls
-                disabled={isLoading || !isEmbedVisible}
-                onTranscript={handleMessageSend}
-                micEnabled={micEnabled}
-                onToggleMic={setMicEnabled}
-                ttsEnabled={ttsEnabled}
-                onToggleTts={setTtsEnabled}
-                onListeningChange={setIsListening}
-                onSpeechDetectedChange={setIsSpeechDetected}
-                onUserInteraction={unlockAudio}
-                mode="overlay"
-              />
             </div>
           </div>
         ) : null}
@@ -471,7 +457,7 @@ export const ChatWindow = ({
         </div>
       </div>
 
-      {enableVoice && viewMode === "text" ? (
+      {enableVoice ? (
         <VoiceControls
           disabled={isLoading || !isEmbedVisible}
           onTranscript={handleMessageSend}
@@ -482,19 +468,20 @@ export const ChatWindow = ({
           onListeningChange={setIsListening}
           onSpeechDetectedChange={setIsSpeechDetected}
           onUserInteraction={unlockAudio}
-          mode="inline"
+          mode={viewMode === "voice" ? "overlay" : "inline"}
         />
       ) : null}
 
-      {session.phase === "completed" ? null : nextFieldRequest ? (
-        <StructuredFieldPrompt
-          request={nextFieldRequest}
-          onSubmit={handleFieldSend}
-          disabled={isLoading}
-        />
-      ) : (
+      {session.phase === "completed" ? null : (
         <>
-          {shouldShowTextInput ? (
+          {nextFieldRequest ? (
+            <StructuredFieldPrompt
+              request={nextFieldRequest}
+              onSubmit={handleFieldSend}
+              disabled={isLoading}
+            />
+          ) : null}
+          {(viewMode === "text" || !enableVoice) && !isLoading ? (
             <ChatInput onSend={handleMessageSend} disabled={isLoading} />
           ) : null}
         </>

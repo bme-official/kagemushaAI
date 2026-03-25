@@ -100,11 +100,17 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           break;
       }
 
-      if (nextBehavior.voice === "speaking") {
-        const mouth = 0.12 + (Math.sin(elapsedSec * 14) + 1) * 0.15;
+      if (nextBehavior.voice === "speaking" || nextBehavior.voice === "listening") {
+        const speed = nextBehavior.voice === "speaking" ? 14 : 10;
+        const base = nextBehavior.voice === "speaking" ? 0.12 : 0.08;
+        const amp = nextBehavior.voice === "speaking" ? 0.15 : 0.1;
+        const mouth = base + (Math.sin(elapsedSec * speed) + 1) * amp;
         expressionManager.setValue("aa", mouth);
         expressionManager.setValue("ih", mouth * 0.45);
         expressionManager.setValue("ou", mouth * 0.4);
+        if (nextBehavior.voice === "listening") {
+          expressionManager.setValue("relaxed", 0.2);
+        }
       }
     };
 

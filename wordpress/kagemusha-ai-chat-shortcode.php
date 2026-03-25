@@ -22,8 +22,8 @@ function kagemusha_ai_chat_shortcode($atts = array()) {
 	$atts = shortcode_atts(
 		array(
 			'app_url' => 'https://kagemusha-ai.vercel.app',
-			'button_label' => 'AIチャットで相談',
-			'modal_title' => "お問い合わせAIチャット",
+			'button_label' => 'AIコンシェルジュ',
+			'modal_title' => "AIコンシェルジュ",
 			'iframe_path' => '/embed/chat',
 		),
 		$atts,
@@ -68,8 +68,8 @@ function kagemusha_ai_chat_render_footer_script() {
 			$kagemusha_ai_chat_widget_config = array(
 				'script_src' => esc_url($default_app_url . '/api/widget'),
 				'app_url' => esc_attr($default_app_url),
-				'button_label' => esc_attr('AIチャットで相談'),
-				'modal_title' => esc_attr("お問い合わせAIチャット"),
+				'button_label' => esc_attr('AIコンシェルジュ'),
+				'modal_title' => esc_attr("AIコンシェルジュ"),
 				'iframe_path' => esc_attr('/embed/chat'),
 			);
 		} else {
