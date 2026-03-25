@@ -308,9 +308,12 @@ export async function POST(request: NextRequest) {
     };
   }
 
+  // confirming フェーズは AI の返答を使わず自前の要約を必ず使う。
+  // AI がフォールバックメッセージや混乱した返答をしても安定した確認文を表示する。
   const assistantTextRaw =
-    aiResult?.reply ??
-    buildFallbackReply(userText, workingSession.collectedFields, finalNextFieldRequest);
+    workingSession.phase === "confirming"
+      ? buildFallbackReply(undefined, workingSession.collectedFields, finalNextFieldRequest)
+      : (aiResult?.reply ?? buildFallbackReply(userText, workingSession.collectedFields, finalNextFieldRequest));
   const assistantText = applyAvatarIdentityToReply(assistantTextRaw, effectiveAvatarSettings);
 
   const assistantMessage: ConversationMessage = {

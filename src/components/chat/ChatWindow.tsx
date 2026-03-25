@@ -553,20 +553,46 @@ export const ChatWindow = ({
     [speakViaTtsApi, stopApiAudio]
   );
 
+  // 初回ユーザー操作でサイレント再生が実行済みかを管理するフラグ
+  const iosAudioUnlockedRef = useRef(false);
+
   const unlockAudio = useCallback(() => {
-    if (!audioUnlocked) {
-      setAudioUnlocked(true);
-      // iOS Safari: 無音の Audio を再生してオーディオコンテキストをユーザージェスチャーで解放する
+    if (!audioUnlocked) setAudioUnlocked(true);
+
+    // iOS Safari: audioUnlocked の値に関わらず、初回ユーザー操作時に
+    // サイレント音声を再生してオーディオコンテキストをジェスチャー文脈で解放する。
+    // これにより enableVoice=true で audioUnlocked が初期 true でも
+    // 確実に iOS オーディオコンテキストがアンロックされる。
+    if (!iosAudioUnlockedRef.current) {
+      iosAudioUnlockedRef.current = true;
       try {
         const silent = new Audio();
         silent.setAttribute("playsinline", "");
-        // 極小の無音 mp3（最短 Base64）
         silent.src =
           "data:audio/mpeg;base64,SUQzBAAAAAAA/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+MYxDsAAANIAAAAAP/////////////////////////////////////////////////////////////////AADwP/////////////////////////////////////////////////////////////////A==";
         silent.volume = 0;
-        silent.play().catch(() => {});
+        // サイレント再生成功後に TTS 再試行をトリガーする
+        silent.play().then(() => {
+          lastSpokenMessageIdRef.current = null;
+          setAudioUnlocked((prev) => {
+            // state 変化で TTS effect を再発火させる（同値でも強制リセット経由）
+            return prev;
+          });
+          // ttsEnabled を一時的に flip して TTS effect を確実に再発火
+          setTtsEnabled((prev) => {
+            if (prev) {
+              // 次フレームで true に戻す
+              requestAnimationFrame(() => setTtsEnabled(true));
+              return false;
+            }
+            return prev;
+          });
+        }).catch(() => {
+          // サイレント再生失敗 = まだジェスチャーが足りない → フラグをリセットして次回再試行
+          iosAudioUnlockedRef.current = false;
+        });
       } catch {
-        // ignore
+        iosAudioUnlockedRef.current = false;
       }
     }
   }, [audioUnlocked]);
