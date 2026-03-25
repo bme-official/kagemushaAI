@@ -124,8 +124,18 @@ export const VoiceControls = ({
     recognition.onstart = () => {
       onListeningChange?.(true);
     };
-    recognition.onspeechstart = () => {};
-    recognition.onspeechend = () => {};
+    recognition.onspeechstart = () => {
+      markSpeechDetected();
+    };
+    recognition.onspeechend = () => {
+      // 発話終了直後のブツ切れ感を避けるため、少し余韻を残して停止
+      clearSpeechIdleTimer();
+      speechIdleTimeoutRef.current = window.setTimeout(() => {
+        setIsSpeechDetected(false);
+        onSpeechDetectedChange?.(false);
+        speechIdleTimeoutRef.current = null;
+      }, 220);
+    };
 
     recognition.onresult = (event) => {
       const resultIndex = Math.max(0, (event?.results?.length ?? 1) - 1);
