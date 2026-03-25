@@ -142,16 +142,23 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    try {
-      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { avatarName?: string };
-      if (parsed.avatarName) {
-        setAvatarNameDisplay(parsed.avatarName);
+    const syncAvatarName = () => {
+      try {
+        const raw = window.localStorage.getItem("kagemusha-avatar-settings");
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as { avatarName?: string };
+        if (parsed.avatarName) {
+          setAvatarNameDisplay(parsed.avatarName);
+        }
+      } catch {
+        // ignore local storage parse error
       }
-    } catch {
-      // ignore local storage parse error
-    }
+    };
+    syncAvatarName();
+    window.addEventListener("kagemusha-avatar-settings-updated", syncAvatarName);
+    return () => {
+      window.removeEventListener("kagemusha-avatar-settings-updated", syncAvatarName);
+    };
   }, []);
 
   useEffect(() => {
@@ -374,6 +381,7 @@ export const ChatWindow = ({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           session,
+          inputMode: enableVoice ? "voice" : "text",
           ...payload
         })
       });

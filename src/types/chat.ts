@@ -57,6 +57,7 @@ export type ChatSessionState = {
 
 export type ChatApiRequest = {
   session: ChatSessionState;
+  inputMode?: "voice" | "text";
   userInput?: string;
   fieldResponse?: {
     fieldName: keyof CollectedContactFields | "confirmSubmit";

@@ -106,9 +106,42 @@ export const AvatarTestClient = () => {
   });
   const [voiceState, setVoiceState] = useState<AvatarVoiceState>("muted");
   const [previewBehavior, setPreviewBehavior] = useState<AvatarBehaviorState>(idleBehavior);
+  const [saveMessage, setSaveMessage] = useState("");
   const activeUrl = customUrl.trim() || selectedUrl;
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        avatarName?: string;
+        avatarNameKana?: string;
+        avatarAge?: string;
+        companyName?: string;
+        companyNameKana?: string;
+        voiceModel?: string;
+        profile?: string;
+        services?: ServiceItem[];
+        statuses?: string[];
+        statusMappings?: Record<string, StatusMapping>;
+      };
+      if (parsed.avatarName) setAvatarName(parsed.avatarName);
+      if (parsed.avatarNameKana) setAvatarNameKana(parsed.avatarNameKana);
+      if (parsed.avatarAge) setAvatarAge(parsed.avatarAge);
+      if (parsed.companyName) setCompanyName(parsed.companyName);
+      if (parsed.companyNameKana) setCompanyNameKana(parsed.companyNameKana);
+      if (parsed.voiceModel) setVoiceModel(parsed.voiceModel);
+      if (parsed.profile) setProfile(parsed.profile);
+      if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
+      if (parsed.statuses?.length) setStatuses(parsed.statuses);
+      if (parsed.statusMappings) setStatusMappings(parsed.statusMappings);
+    } catch {
+      // ignore broken saved payload
+    }
+  }, []);
+
+  const handleSaveSettings = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
       "kagemusha-avatar-settings",
@@ -125,18 +158,9 @@ export const AvatarTestClient = () => {
         statusMappings
       })
     );
-  }, [
-    avatarAge,
-    avatarName,
-    avatarNameKana,
-    companyName,
-    companyNameKana,
-    profile,
-    services,
-    statusMappings,
-    statuses,
-    voiceModel
-  ]);
+    window.dispatchEvent(new Event("kagemusha-avatar-settings-updated"));
+    setSaveMessage(`保存しました (${new Date().toLocaleTimeString("ja-JP")})`);
+  };
 
   const pickRandom = <T,>(values: T[], fallback: T) => {
     if (!values.length) return fallback;
@@ -255,10 +279,26 @@ export const AvatarTestClient = () => {
 
   return (
     <main style={{ padding: 20, display: "grid", gap: 14, alignItems: "start" }}>
-      <h1 style={{ margin: 0 }}>VRMアバターテスト</h1>
+      <h1 style={{ margin: 0 }}>VRMアバター設定</h1>
       <p style={{ margin: 0, color: "#475569" }}>
         アバター表示を見ながら、名前・声・基本情報・ステータスごとの表情/ジェスチャー割り当てを確認できます。
       </p>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button
+          type="button"
+          onClick={handleSaveSettings}
+          style={{
+            borderRadius: 10,
+            border: "1px solid #0f172a",
+            background: "#0f172a",
+            color: "#fff",
+            padding: "8px 14px"
+          }}
+        >
+          保存して反映
+        </button>
+        {saveMessage ? <span style={{ fontSize: 12, color: "#334155" }}>{saveMessage}</span> : null}
+      </div>
       <div style={{ display: "grid", gap: 10, maxWidth: 860 }}>
         <div style={{ display: "grid", gap: 6 }}>
           <label style={{ fontSize: 13, color: "#334155" }}>名前（表示）</label>

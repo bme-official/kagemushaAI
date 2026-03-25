@@ -6,12 +6,15 @@ export const getNextFieldRequest = (
   context?: {
     inferredIntent?: string | null;
     shouldCollectContact?: boolean;
+    inputMode?: "voice" | "text";
   }
 ): StructuredFieldRequest | null => {
   // 会話文脈のない必須情報の押し付けを避けるため、
   // まず問い合わせ本文の補足（when_missing）を優先して確認する。
+  const shouldSkipInquiryBodyPrompt = context?.inputMode === "voice";
   for (const field of inquiryConfig.fieldCollection) {
     const value = collected[field.fieldName];
+    if (shouldSkipInquiryBodyPrompt && field.fieldName === "inquiryBody") continue;
     if (field.required && field.showTiming === "when_missing" && !value) {
       return {
         kind: "field_request",
