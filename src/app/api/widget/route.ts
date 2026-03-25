@@ -85,7 +85,13 @@ const buildWidgetScript = (baseAppUrl: string) => {
         const parsed = JSON.parse(embeddedSettingsRaw);
         if (parsed && typeof parsed === "object") return parsed;
       } catch {
-        // ignore invalid dataset payload
+        try {
+          const decoded = decodeURIComponent(embeddedSettingsRaw);
+          const parsed = JSON.parse(decoded);
+          if (parsed && typeof parsed === "object") return parsed;
+        } catch {
+          // ignore invalid dataset payload
+        }
       }
     }
     try {
