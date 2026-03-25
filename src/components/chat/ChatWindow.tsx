@@ -242,7 +242,12 @@ export const ChatWindow = ({
 
   const applyRuntimeSettings = useCallback((parsed: RuntimeAvatarSettings | null | undefined) => {
     if (!parsed) return;
-    setRuntimeAvatarSettings(parsed);
+    // services が空配列の場合は既存の設定を上書きしない（Supabase 側で空になっていても保持）
+    setRuntimeAvatarSettings((prev) => ({
+      ...prev,
+      ...parsed,
+      services: parsed.services?.length ? parsed.services : prev.services
+    }));
     if (parsed.avatarName) {
       setAvatarNameDisplay(parsed.avatarName);
     }
@@ -1010,50 +1015,53 @@ export const ChatWindow = ({
         />
       ) : null}
 
-      {session.phase === "completed" ? null : (
-        <>
-          {nextFieldRequest && viewMode === "voice" && enableVoice ? (
-            <div
-              style={{
-                position: "absolute",
-                left: 12,
-                right: 12,
-                bottom: 74,
-                zIndex: 21
-              }}
-            >
-              {nextFieldRequest.fieldName === "confirmSubmit" ? (
-                <InquiryConfirmCard
-                  collectedFields={session.collectedFields}
-                  onConfirm={() => handleFieldSend("yes")}
-                  onEdit={() => handleFieldSend("no")}
-                  disabled={isLoading}
-                />
-              ) : (
-                <StructuredFieldPrompt
-                  request={nextFieldRequest}
-                  onSubmit={handleFieldSend}
-                  onSkip={!nextFieldRequest.required ? () => handleFieldSend("") : undefined}
-                  disabled={isLoading}
-                />
-              )}
-            </div>
-          ) : null}
-          {(viewMode === "text" || !enableVoice) && !isLoading ? (
+      {/* ボイスモードのヒアリング入力欄: 完了後は非表示 */}
+      {session.phase !== "completed" && nextFieldRequest && viewMode === "voice" && enableVoice ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 12,
+            right: 12,
+            bottom: 74,
+            zIndex: 21
+          }}
+        >
+          {nextFieldRequest.fieldName === "confirmSubmit" ? (
+            <InquiryConfirmCard
+              collectedFields={session.collectedFields}
+              onConfirm={() => handleFieldSend("yes")}
+              onEdit={() => handleFieldSend("no")}
+              disabled={isLoading}
+            />
+          ) : (
+            <StructuredFieldPrompt
+              request={nextFieldRequest}
+              onSubmit={handleFieldSend}
+              onSkip={!nextFieldRequest.required ? () => handleFieldSend("") : undefined}
+              disabled={isLoading}
+            />
+          )}
+        </div>
+      ) : null}
+
+      {/* テキスト入力欄: 完了後も表示したままにする */}
+      <>
+        {(viewMode === "text" || !enableVoice) && !isLoading ? (
             <ChatInput
               onSend={handleMessageSend}
               disabled={isLoading}
               placeholder={
-                nextFieldRequest?.fieldName === "confirmSubmit"
-                  ? "送信する場合は「はい」、修正する場合は「いいえ」と入力"
-                  : nextFieldRequest
-                    ? `【${nextFieldRequest.label}】を入力してください`
-                    : "例) WEB制作の見積もりを相談したいです"
+                session.phase === "completed"
+                  ? "引き続きお気軽にご質問ください"
+                  : nextFieldRequest?.fieldName === "confirmSubmit"
+                    ? "送信する場合は「はい」、修正する場合は「いいえ」と入力"
+                    : nextFieldRequest
+                      ? `【${nextFieldRequest.label}】を入力してください`
+                      : "例) WEB制作の見積もりを相談したいです"
               }
             />
           ) : null}
-        </>
-      )}
+      </>
     </section>
   );
 };

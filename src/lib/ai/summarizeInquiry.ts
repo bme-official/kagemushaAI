@@ -2,18 +2,18 @@ import type { ChatSessionState } from "@/types/chat";
 
 export const summarizeInquiry = (session: ChatSessionState): string => {
   const fields = session.collectedFields;
-  const parts = [
-    `問い合わせ種別: ${session.inferredIntent ?? "未確定"}`,
-    `想定事業カテゴリ: ${session.inferredCategory ?? "未確定"}`,
+  // 入力済み項目のみ表示。未入力の任意項目は含めない。
+  const parts: string[] = [
     `緊急度: ${session.urgency}`,
-    `人間対応推奨: ${session.needsHuman ? "はい" : "いいえ"}`,
-    `ご相談概要: ${fields.inquiryBody ?? "未入力"}`,
-    `担当者名: ${fields.name ?? "未入力"}`,
-    `メール: ${fields.email ?? "未入力"}`,
-    `組織名: ${fields.organization ?? "未入力"}`,
-    `電話番号: ${fields.phone ?? "未入力"}`,
-    `予算感: ${fields.budget ?? "未入力"}`,
-    `納期感: ${fields.deadline ?? "未入力"}`
-  ];
+    session.inferredIntent ? `問い合わせ種別: ${session.inferredIntent}` : null,
+    session.needsHuman ? "人間対応推奨: はい" : null,
+    fields.inquiryBody ? `ご相談概要: ${fields.inquiryBody}` : null,
+    fields.name ? `担当者名: ${fields.name}` : null,
+    fields.email ? `メール: ${fields.email}` : null,
+    fields.organization ? `組織名: ${fields.organization}` : null,
+    fields.phone ? `電話番号: ${fields.phone}` : null,
+    fields.deadline ? `希望日時: ${fields.deadline}` : null,
+    fields.budget ? `予算感: ${fields.budget}` : null
+  ].filter((v): v is string => v !== null);
   return parts.join("\n");
 };

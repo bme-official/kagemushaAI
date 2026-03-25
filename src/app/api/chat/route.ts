@@ -95,13 +95,16 @@ const buildFallbackReply = (
   nextFieldRequest: StructuredFieldRequest | null
 ) => {
   if (!inputText && nextFieldRequest) {
-    return `${nextFieldRequest.label}を入力してください。`;
+    return `${nextFieldRequest.label}を教えていただけますか？`;
   }
   if (!inputText) return characterConfig.fallbackMessage;
   if (!collected.inquiryBody) {
-    return "ありがとうございます。ご相談の概要をもう少し詳しく教えてください。";
+    return "ありがとうございます。もう少し詳しくご相談内容を教えていただけますか？";
   }
-  return `ありがとうございます。内容を整理しました。${nextFieldRequest ? `${nextFieldRequest.label}を続けて入力してください。` : "送信内容の確認へ進みます。"}`;
+  if (nextFieldRequest) {
+    return `かしこまりました。では${nextFieldRequest.label}を教えていただけますか？`;
+  }
+  return "ありがとうございます。内容を確認いたします。";
 };
 
 const applyAvatarIdentityToReply = (
