@@ -108,17 +108,17 @@ ${inquiryConfig.inquiryIntents.map((intent) => `- ${intent}`).join("\n")}
 - ビジネスから大きく外れない範囲での軽い雑談・アイスブレイクには自然に応じる。ただし長く脱線せず、会話の流れを本題へ緩やかに戻す
 
 nextFieldRequest 設定ガイド（会話とフォームを同期させるための設定）:
-- ユーザーが「打ち合わせ」「ミーティング」「日程調整」「相談したい」など具体的な行動意図を示したら、
-  まず「ご希望の日時はいつ頃でしょうか？（候補があれば複数可）」と聞き、nextFieldRequest は null にする（日時は会話で収集）
-- 打ち合わせ意図で日時（deadline）が得られた後に、name → email → organization の順で nextFieldRequest を設定する
+- ユーザーが「打ち合わせ」「ミーティング」「日程調整」「相談したい」など具体的な行動意図を示したら：
+  【ステップ1】まず「ご希望の日時はいつ頃でしょうか？ あわせて打ち合わせでお伝えしたいことがあれば教えてください」と自然に聞く。
+              このターンは nextFieldRequest = null にする（フォームは出さない）。
+  【ステップ2】ユーザーが日時や内容を答えたら collectedFields.deadline に日時を設定し
+              inquiryBody を「打ち合わせ希望（○○）」のように要約で更新する。
+              次のターンで nextFieldRequest に {"fieldName":"name",...} を設定する。
+  【ステップ3】name→email→organization の順で収集する（絶対に null にしない）。
 - 日時・用件・予算は会話で収集するため nextFieldRequest は null にする（フォームを出さない）
 - 電話番号は任意。会話で出てきた場合は collectedFields に記録し nextFieldRequest には設定しない
 - collectedFields.inquiryBody は直近のユーザー発話をそのまま入れず、会話全体から読み取れる相談の要旨を簡潔に要約した文章（例:「打ち合わせ希望（明日の夕方）」）にする
 - ユーザーが日時・候補日などを言及している場合は必ず collectedFields.deadline に設定する
-- 【打ち合わせ・ミーティング・日程調整の意図の場合】name→email→organization を収集した後、
-  「ご希望の日時や、打ち合わせについてお伝えしたいことがあれば教えてください」など自然な言葉でひとことヒアリングする。
-  ユーザーが日時や内容を答えたら collectedFields.deadline に日時を設定し nextFieldRequest は null にする（フォームは出さない）。
-  得られた情報で inquiryBody を「打ち合わせ希望（○○・△△）」のように deadline と内容を含む要約で更新する。
 - すべての必須項目（name・email・organization・inquiryBody）が揃い、かつ打ち合わせ意図なら deadline も揃ったら confirmSubmit を設定する
 - collectedFields に name/email/organization がすでに設定済みの場合は再度聞かない。ユーザーが新しい用件を伝えてきた場合は inquiryBody と deadline のみ新たに収集して confirmSubmit を設定する
 - まだ連絡先収集フェーズでなければ nextFieldRequest は必ず null にする

@@ -74,6 +74,8 @@ export const VoiceControls = ({
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const shouldKeepListeningRef = useRef(false);
+  // onstart が発火したかどうかのフラグ。発火しないまま onend が来たら許可ダイアログ後の失敗と判定
+  const recognitionStartedRef = useRef(false);
   const restartTimeoutRef = useRef<number | null>(null);
   const speechIdleTimeoutRef = useRef<number | null>(null);
 
@@ -86,9 +88,9 @@ export const VoiceControls = ({
 
   // コールバック ref: recognition が古いクロージャを保持しても常に最新版を呼ぶ
   // （再レンダーで session が更新された handleVoiceTranscript を確実に使用する）
-  const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange });
+  const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic });
   useEffect(() => {
-    callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange };
+    callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic };
   });
 
   const hasSpeechRecognition = useMemo(() => {
@@ -163,7 +165,10 @@ export const VoiceControls = ({
     recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別
     recognition.maxAlternatives = 1;
     recognition.continuous = !isIOS;
+    // 新しいセッション開始時にリセット（onend で onstart 未発火を検出するため）
+    recognitionStartedRef.current = false;
     recognition.onstart = () => {
+      recognitionStartedRef.current = true;
       setUnsupportedMessage("");
       callbacksRef.current.onListeningChange?.(true);
     };
@@ -213,9 +218,11 @@ export const VoiceControls = ({
         shouldKeepListeningRef.current = false;
         setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
       } else if (err === "service-not-allowed") {
-        // iOS: ジェスチャー外で呼ばれた可能性。自動再起動は止め、次のボタン操作を待つ
+        // iOS: ジェスチャー外で呼ばれた or 許可ダイアログ後に認識が開始できなかった。
+        // マイクを OFF に戻して再タップを促す。
         shouldKeepListeningRef.current = false;
-        setUnsupportedMessage("マイクの開始に失敗しました。もう一度マイクボタンを押してください。");
+        callbacksRef.current.onToggleMic(false);
+        setUnsupportedMessage("マイクボタンをもう一度タップしてください。");
       }
       // network / aborted / no-speech などは onend で再起動される
     };
@@ -225,6 +232,14 @@ export const VoiceControls = ({
       callbacksRef.current.onListeningChange?.(false);
       callbacksRef.current.onSpeechDetectedChange?.(false);
       if (shouldKeepListeningRef.current && !disabled) {
+        // onstart が発火しないまま onend が来た = 許可ダイアログ後に認識が開始されなかったケース
+        // ジェスチャー文脈が失われているため自動再起動できない。マイクを OFF にして再タップを促す。
+        if (!recognitionStartedRef.current) {
+          shouldKeepListeningRef.current = false;
+          callbacksRef.current.onToggleMic(false);
+          setUnsupportedMessage("マイクボタンをもう一度タップしてください。");
+          return;
+        }
         clearRestartTimer();
         // iOS は onend が頻繁に発火するため少し余裕を持たせる
         const restartDelay = /iphone|ipad|ipod/i.test(navigator.userAgent) ? 300 : 80;

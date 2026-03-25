@@ -174,15 +174,17 @@ export async function POST(request: NextRequest) {
   // 問い合わせ送信完了後にユーザーが新たな会話を始めた場合は、
   // 問い合わせ内容をリセットして新しい相談として扱う。
   // 連絡先情報（name/email/org/phone）は保持し再利用できるようにする。
-  // メッセージ履歴は保持するが、フォーム入力行（"name: 〇〇" 形式）は
-  // AI が旧フローの続きと誤認しないよう除去する。
+  // 表示用メッセージ履歴は保持するが、AI には受付完了メッセージ＋新規入力のみ渡す。
+  let wasCompletedPhase = false;
   if (workingSession.phase === "completed" && body.userInput) {
+    wasCompletedPhase = true;
     workingSession.phase = "collecting";
     const { name, email, organization, phone } = workingSession.collectedFields;
     workingSession.collectedFields = { name, email, organization, phone };
     workingSession.inferredIntent = null;
     workingSession.inferredCategory = null;
     workingSession.summaryDraft = "";
+    // 表示用メッセージはフォーム入力行のみ除去して保持（ユーザーが履歴を見返せる）
     workingSession.messages = workingSession.messages.filter((m) => {
       if (m.role !== "user") return true;
       const content = typeof m.content === "string" ? m.content : "";
@@ -270,7 +272,45 @@ export async function POST(request: NextRequest) {
   workingSession.urgency = resultFromRule.urgency;
   workingSession.needsHuman = resultFromRule.needsHuman;
 
-  const aiResult = await callOpenAI(workingSession, userText, effectiveAvatarSettings);
+  // confirming フェーズで「修正したい」などの意図を検出した場合は collecting に戻す
+  const wantsToEdit = workingSession.phase === "confirming" &&
+    /修正|変更|直し|訂正|間違|やり直|edit/.test(latestText ?? "");
+  if (wantsToEdit) {
+    workingSession.phase = "collecting";
+    // テキストからどのフィールドを修正するか推定してクリア
+    const fieldClearPatterns: [keyof CollectedContactFields, RegExp][] = [
+      ["email", /メール|アドレス|mail/i],
+      ["name", /名前|お名前|氏名/i],
+      ["organization", /会社|組織|社名/i],
+      ["phone", /電話/i],
+      ["deadline", /日程|日時|スケジュール/i],
+      ["budget", /予算|費用/i],
+    ];
+    for (const [field, pattern] of fieldClearPatterns) {
+      if (pattern.test(latestText ?? "")) {
+        delete workingSession.collectedFields[field];
+        break;
+      }
+    }
+  }
+
+  // 完了後の新規会話では、AI に渡すメッセージを受付完了メッセージ＋新規入力のみに絞る。
+  // 表示用メッセージ（workingSession.messages）は保持し、AI コンテキストのみ切り分ける。
+  const sessionForAI = wasCompletedPhase
+    ? (() => {
+        const lastAssistant = [...workingSession.messages].reverse().find((m) => m.role === "assistant");
+        const lastUser = workingSession.messages[workingSession.messages.length - 1];
+        return {
+          ...workingSession,
+          messages: [
+            ...(lastAssistant ? [lastAssistant] : []),
+            ...(lastUser?.role === "user" ? [lastUser] : [])
+          ]
+        };
+      })()
+    : workingSession;
+
+  const aiResult = await callOpenAI(sessionForAI, userText, effectiveAvatarSettings);
   if (aiResult) {
     // inferredIntent / inferredCategory は AI が null を返した場合でも前ターンの値を保持する。
     // フィールド送信ターン（userText 未定義）で AI が分類不能でも収集フローが途切れないようにする。
@@ -349,9 +389,8 @@ export async function POST(request: NextRequest) {
   );
 
   // 必須項目が揃ったら任意フィールドの示唆を無視して必ず確認フェーズへ移行する。
-  // AI が phone などの任意フィールドを nextFieldRequest で返しても
-  // getNextFieldRequest がそれを返してしまい !nextFieldRequest が偽になる問題を防ぐ。
-  if (hasRequired && finalShouldCollectContact) {
+  // ただし修正意図が検出された場合は collecting のまま維持する。
+  if (hasRequired && finalShouldCollectContact && !wantsToEdit) {
     workingSession.phase = "confirming";
     workingSession.summaryDraft = summarizeInquiry(workingSession);
   } else {

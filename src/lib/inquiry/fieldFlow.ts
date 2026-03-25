@@ -34,13 +34,23 @@ export const getNextFieldRequest = (
     }
   }
 
+  // 打ち合わせ意図の場合は deadline を先に収集してから連絡先フィールドを出す
+  const isMeetingIntentFl = context?.inferredIntent
+    ? ["日程調整", "打ち合わせ希望"].some((i) => context.inferredIntent!.includes(i))
+    : false;
+  const deadlineCollected = Boolean(collected.deadline);
+  // 連絡先フィールド（name/email/org）を今出してよいか
+  const identityFieldNames = ["name", "email", "organization", "phone"];
+  const canShowIdentityNow = !isMeetingIntentFl || deadlineCollected;
+
   // AI が会話文脈から適切なフィールドを示唆している場合は優先する。
-  // ただし shouldCollectContact が true の場合のみ（一般的な質問では無視する）。
+  // ただし shouldCollectContact が true かつ打ち合わせ意図なら deadline 収集後のみ連絡先を出す。
   const aiField = context?.aiSuggestedField;
   if (
     aiField &&
     aiField.fieldName !== "confirmSubmit" &&
     context?.shouldCollectContact &&
+    (canShowIdentityNow || !identityFieldNames.includes(aiField.fieldName)) &&
     !collected[aiField.fieldName as keyof CollectedContactFields] &&
     !(isVoice && VOICE_ONLY_FIELDS.has(aiField.fieldName))
   ) {
@@ -50,15 +60,17 @@ export const getNextFieldRequest = (
   // 問い合わせ本文と意図が揃ってから連絡先情報を収集する。
   // 既にひとつでも連絡先フィールドが収集済みの場合は inferredIntent・shouldCollectContact
   // に関わらず継続する（フィールド送信ターンで条件が外れても途切れないようにする）。
+  // 打ち合わせ意図の場合は deadline が収集されるまで連絡先を出さない。
   const alreadyCollecting = Boolean(
     collected.name || collected.email || collected.organization
   );
   const canAskIdentityFields =
-    alreadyCollecting ||
+    (alreadyCollecting && canShowIdentityNow) ||
     Boolean(
       collected.inquiryBody &&
       context?.inferredIntent &&
-      context?.shouldCollectContact
+      context?.shouldCollectContact &&
+      canShowIdentityNow
     );
   if (!canAskIdentityFields) return null;
 
