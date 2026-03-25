@@ -4,14 +4,22 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+import type { AvatarBehaviorState } from "@/types/avatar";
 
 type VRMCanvasProps = {
   modelUrl: string;
+  behavior: AvatarBehaviorState;
 };
 
-export const VRMCanvas = ({ modelUrl }: VRMCanvasProps) => {
+export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const behaviorRef = useRef<AvatarBehaviorState>(behavior);
+  const currentVrmRef = useRef<VRM | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    behaviorRef.current = behavior;
+  }, [behavior]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -37,7 +45,101 @@ export const VRMCanvas = ({ modelUrl }: VRMCanvasProps) => {
 
     const clock = new THREE.Clock();
     let animationFrameId = 0;
-    let currentVrm: VRM | null = null;
+
+    const applyBoneRotation = (
+      bone: THREE.Object3D | null | undefined,
+      target: Partial<Record<"x" | "y" | "z", number>>
+    ) => {
+      if (!bone) return;
+      if (typeof target.x === "number") {
+        bone.rotation.x = THREE.MathUtils.lerp(bone.rotation.x, target.x, 0.12);
+      }
+      if (typeof target.y === "number") {
+        bone.rotation.y = THREE.MathUtils.lerp(bone.rotation.y, target.y, 0.12);
+      }
+      if (typeof target.z === "number") {
+        bone.rotation.z = THREE.MathUtils.lerp(bone.rotation.z, target.z, 0.12);
+      }
+    };
+
+    const applyExpression = (vrm: VRM, elapsedSec: number) => {
+      const expressionManager = vrm.expressionManager;
+      if (!expressionManager) return;
+
+      expressionManager.setValue("happy", 0);
+      expressionManager.setValue("angry", 0);
+      expressionManager.setValue("surprised", 0);
+      expressionManager.setValue("relaxed", 0);
+      expressionManager.setValue("aa", 0);
+      expressionManager.setValue("ih", 0);
+      expressionManager.setValue("ou", 0);
+
+      const nextBehavior = behaviorRef.current;
+      switch (nextBehavior.expression) {
+        case "smile":
+          expressionManager.setValue("happy", 0.6);
+          break;
+        case "serious":
+          expressionManager.setValue("angry", 0.25);
+          break;
+        case "surprised":
+          expressionManager.setValue("surprised", 0.55);
+          break;
+        case "thinking":
+          expressionManager.setValue("relaxed", 0.35);
+          break;
+        default:
+          break;
+      }
+
+      if (nextBehavior.voice === "speaking") {
+        const mouth = 0.12 + (Math.sin(elapsedSec * 14) + 1) * 0.15;
+        expressionManager.setValue("aa", mouth);
+        expressionManager.setValue("ih", mouth * 0.45);
+        expressionManager.setValue("ou", mouth * 0.4);
+      }
+    };
+
+    const applyGesture = (vrm: VRM, elapsedSec: number) => {
+      const head = vrm.humanoid.getNormalizedBoneNode("head");
+      const neck = vrm.humanoid.getNormalizedBoneNode("neck");
+      const spine = vrm.humanoid.getNormalizedBoneNode("spine");
+      const leftUpperArm = vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
+      const rightUpperArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
+      const nextBehavior = behaviorRef.current;
+      const idleSwing = Math.sin(elapsedSec * 1.5) * 0.05;
+
+      applyBoneRotation(head, { x: idleSwing * 0.4, y: idleSwing * 0.6, z: 0 });
+      applyBoneRotation(neck, { x: 0, y: idleSwing * 0.3, z: 0 });
+      applyBoneRotation(spine, { x: 0, y: 0, z: 0 });
+      applyBoneRotation(leftUpperArm, { x: 0.06, z: 0.05 });
+      applyBoneRotation(rightUpperArm, { x: 0.06, z: -0.05 });
+
+      switch (nextBehavior.gesture) {
+        case "thinking":
+          applyBoneRotation(head, { x: 0.2, y: -0.2 });
+          applyBoneRotation(neck, { x: 0.1, y: -0.12 });
+          break;
+        case "listening":
+          applyBoneRotation(head, { x: 0.05, y: 0.22 });
+          applyBoneRotation(neck, { y: 0.14 });
+          applyBoneRotation(spine, { y: 0.1 });
+          break;
+        case "explaining":
+          applyBoneRotation(head, { x: -0.03, y: -0.1 });
+          applyBoneRotation(leftUpperArm, { x: -0.2, z: 0.5 });
+          applyBoneRotation(rightUpperArm, { x: -0.2, z: -0.5 });
+          break;
+        case "emphasis":
+          applyBoneRotation(head, { x: -0.06, y: 0.08 });
+          applyBoneRotation(neck, { x: -0.04 });
+          applyBoneRotation(leftUpperArm, { x: -0.35, z: 0.85 });
+          applyBoneRotation(rightUpperArm, { x: -0.35, z: -0.85 });
+          break;
+        default:
+          break;
+      }
+    };
 
     const resize = () => {
       const width = container.clientWidth || 200;
@@ -49,10 +151,11 @@ export const VRMCanvas = ({ modelUrl }: VRMCanvasProps) => {
 
     const animate = () => {
       const delta = clock.getDelta();
+      const currentVrm = currentVrmRef.current;
       if (currentVrm) {
         currentVrm.update(delta);
-        // TODO: TTL音声と連動して表情/口パクを制御する
-        currentVrm.scene.rotation.y += delta * 0.12;
+        applyExpression(currentVrm, clock.elapsedTime);
+        applyGesture(currentVrm, clock.elapsedTime);
       }
       renderer.render(scene, camera);
       animationFrameId = window.requestAnimationFrame(animate);
@@ -70,7 +173,7 @@ export const VRMCanvas = ({ modelUrl }: VRMCanvasProps) => {
         const vrm = gltf.userData.vrm as VRM;
         VRMUtils.rotateVRM0(vrm);
         scene.add(vrm.scene);
-        currentVrm = vrm;
+        currentVrmRef.current = vrm;
         setError(null);
       },
       undefined,
@@ -84,10 +187,11 @@ export const VRMCanvas = ({ modelUrl }: VRMCanvasProps) => {
     return () => {
       window.cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
+      const currentVrm = currentVrmRef.current;
       if (currentVrm) {
         scene.remove(currentVrm.scene);
         VRMUtils.deepDispose(currentVrm.scene);
-        currentVrm = null;
+        currentVrmRef.current = null;
       }
       renderer.dispose();
       if (renderer.domElement.parentElement === container) {

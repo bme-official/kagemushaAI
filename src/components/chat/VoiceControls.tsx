@@ -40,13 +40,15 @@ type VoiceControlsProps = {
   onTranscript: (text: string) => void;
   ttsEnabled: boolean;
   onToggleTts: (enabled: boolean) => void;
+  onListeningChange?: (listening: boolean) => void;
 };
 
 export const VoiceControls = ({
   disabled,
   onTranscript,
   ttsEnabled,
-  onToggleTts
+  onToggleTts,
+  onListeningChange
 }: VoiceControlsProps) => {
   const [isListening, setIsListening] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -83,13 +85,16 @@ export const VoiceControls = ({
     };
     recognition.onerror = () => {
       setIsListening(false);
+      onListeningChange?.(false);
     };
     recognition.onend = () => {
       setIsListening(false);
+      onListeningChange?.(false);
     };
 
     recognitionRef.current = recognition;
     setIsListening(true);
+    onListeningChange?.(true);
     recognition.start();
   };
 
@@ -98,6 +103,7 @@ export const VoiceControls = ({
       recognitionRef.current.stop();
     }
     setIsListening(false);
+    onListeningChange?.(false);
   };
 
   if (!voiceConfig.enabled) return null;

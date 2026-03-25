@@ -11,6 +11,7 @@ import { ConversationSummary } from "@/components/chat/ConversationSummary";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StructuredFieldPrompt } from "@/components/chat/StructuredFieldPrompt";
 import { VoiceControls } from "@/components/chat/VoiceControls";
+import type { AvatarBehaviorState } from "@/types/avatar";
 import type {
   ChatSessionState,
   ConversationMessage,
@@ -58,9 +59,27 @@ type ChatApiResponse = {
 type ChatWindowProps = {
   sourcePage?: string;
   enableVoice?: boolean;
+  onAvatarBehaviorChange?: (behavior: AvatarBehaviorState) => void;
 };
 
-export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: ChatWindowProps) => {
+const detectExpression = (
+  latestAssistantMessage: ConversationMessage | undefined,
+  urgency: ChatSessionState["urgency"]
+): AvatarBehaviorState["expression"] => {
+  if (urgency === "high") return "serious";
+  const content = latestAssistantMessage?.content ?? "";
+  if (/ありがとう|よかった|嬉しい|安心|承知しました/.test(content)) return "smile";
+  if (/重要|至急|緊急|急ぎ/.test(content)) return "serious";
+  if (/!|！/.test(content)) return "surprised";
+  if (/確認|整理|検討/.test(content)) return "thinking";
+  return "neutral";
+};
+
+export const ChatWindow = ({
+  sourcePage = "/contact",
+  enableVoice = false,
+  onAvatarBehaviorChange
+}: ChatWindowProps) => {
   const [session, setSession] = useState<ChatSessionState>(() => {
     const initial = createInitialSession();
     return { ...initial, sourcePage };
@@ -72,6 +91,14 @@ export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: Cha
   const [nextFieldRequest, setNextFieldRequest] = useState<StructuredFieldRequest | null>(
     null
   );
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
+    gesture: "idle",
+    voice: "muted",
+    expression: "neutral",
+    statusLabel: "ご相談受付中"
+  });
   const lastSpokenMessageIdRef = useRef<string | null>(null);
 
   const messages = useMemo(() => session.messages, [session.messages]);
@@ -90,8 +117,54 @@ export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: Cha
     utterance.lang = voiceConfig.locale;
     utterance.rate = voiceConfig.speechRate;
     utterance.pitch = voiceConfig.speechPitch;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
   }, [enableVoice, messages, ttsEnabled]);
+
+  useEffect(() => {
+    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
+      setIsSpeaking(false);
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+    }
+  }, [enableVoice, ttsEnabled]);
+
+  useEffect(() => {
+    const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
+    const expression = detectExpression(latestAssistantMessage, session.urgency);
+    const voice: AvatarBehaviorState["voice"] = isListening
+      ? "listening"
+      : isSpeaking
+        ? "speaking"
+        : "muted";
+
+    const gesture: AvatarBehaviorState["gesture"] = isListening
+      ? "listening"
+      : isLoading
+        ? "thinking"
+        : isSpeaking
+          ? expression === "serious"
+            ? "emphasis"
+            : "explaining"
+          : "idle";
+
+    const statusLabel = isListening
+      ? "音声を聞き取り中..."
+      : isSpeaking
+        ? "回答を読み上げ中..."
+        : isLoading
+          ? "入力内容を整理中..."
+          : session.urgency === "high"
+            ? "優先度高めで確認中"
+            : "ご相談受付中";
+
+    const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, statusLabel };
+    setAvatarBehavior(nextBehavior);
+    onAvatarBehaviorChange?.(nextBehavior);
+  }, [isListening, isLoading, isSpeaking, messages, onAvatarBehaviorChange, session.urgency]);
 
   const postChat = async (payload: {
     userInput?: string;
@@ -198,7 +271,7 @@ export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: Cha
         <AvatarShell />
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
           <strong style={{ fontSize: 14 }}>{characterConfig.name}</strong>
-          <AvatarStatus status={isLoading ? "thinking" : "idle"} />
+          <AvatarStatus statusLabel={avatarBehavior.statusLabel} />
         </div>
       </div>
 
@@ -225,6 +298,7 @@ export const ChatWindow = ({ sourcePage = "/contact", enableVoice = false }: Cha
               onTranscript={handleMessageSend}
               ttsEnabled={ttsEnabled}
               onToggleTts={setTtsEnabled}
+              onListeningChange={setIsListening}
             />
           ) : null}
           <ChatInput onSend={handleMessageSend} disabled={isLoading} />

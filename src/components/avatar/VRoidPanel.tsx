@@ -1,7 +1,12 @@
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { VRMCanvas } from "@/components/avatar/VRMCanvas";
+import type { AvatarBehaviorState } from "@/types/avatar";
 
-export const VRoidPanel = () => {
+type VRoidPanelProps = {
+  behavior: AvatarBehaviorState;
+};
+
+export const VRoidPanel = ({ behavior }: VRoidPanelProps) => {
   const isVrmFile = avatarRuntimeConfig.modelUrl.toLowerCase().endsWith(".vrm");
 
   return (
@@ -25,7 +30,7 @@ export const VRoidPanel = () => {
             style={{ width: "100%", height: "100%", border: "none", borderRadius: 8 }}
           />
         ) : avatarRuntimeConfig.modelUrl && isVrmFile ? (
-          <VRMCanvas modelUrl={avatarRuntimeConfig.modelUrl} />
+          <VRMCanvas modelUrl={avatarRuntimeConfig.modelUrl} behavior={behavior} />
         ) : (
           <p style={{ margin: 0, color: "#64748b", fontSize: 13, textAlign: "center" }}>
             {avatarRuntimeConfig.fallbackText}
