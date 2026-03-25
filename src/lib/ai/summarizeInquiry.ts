@@ -4,9 +4,7 @@ export const summarizeInquiry = (session: ChatSessionState): string => {
   const fields = session.collectedFields;
   // 入力済み項目のみ表示。未入力の任意項目は含めない。
   const parts: string[] = [
-    `緊急度: ${session.urgency}`,
     session.inferredIntent ? `問い合わせ種別: ${session.inferredIntent}` : null,
-    session.needsHuman ? "人間対応推奨: はい" : null,
     fields.inquiryBody ? `ご相談概要: ${fields.inquiryBody}` : null,
     fields.name ? `担当者名: ${fields.name}` : null,
     fields.email ? `メール: ${fields.email}` : null,
