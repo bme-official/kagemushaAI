@@ -71,6 +71,7 @@ export const VoiceControls = ({
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const shouldKeepListeningRef = useRef(false);
   const restartTimeoutRef = useRef<number | null>(null);
+  const speechIdleTimeoutRef = useRef<number | null>(null);
 
   const hasSpeechRecognition = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -83,6 +84,24 @@ export const VoiceControls = ({
       window.clearTimeout(restartTimeoutRef.current);
       restartTimeoutRef.current = null;
     }
+  };
+
+  const clearSpeechIdleTimer = () => {
+    if (speechIdleTimeoutRef.current !== null) {
+      window.clearTimeout(speechIdleTimeoutRef.current);
+      speechIdleTimeoutRef.current = null;
+    }
+  };
+
+  const markSpeechDetected = () => {
+    setIsSpeechDetected(true);
+    onSpeechDetectedChange?.(true);
+    clearSpeechIdleTimer();
+    speechIdleTimeoutRef.current = window.setTimeout(() => {
+      setIsSpeechDetected(false);
+      onSpeechDetectedChange?.(false);
+      speechIdleTimeoutRef.current = null;
+    }, 550);
   };
 
   const startListening = () => {
@@ -106,10 +125,10 @@ export const VoiceControls = ({
       onListeningChange?.(true);
     };
     recognition.onspeechstart = () => {
-      setIsSpeechDetected(true);
-      onSpeechDetectedChange?.(true);
+      markSpeechDetected();
     };
     recognition.onspeechend = () => {
+      clearSpeechIdleTimer();
       setIsSpeechDetected(false);
       onSpeechDetectedChange?.(false);
     };
@@ -118,10 +137,12 @@ export const VoiceControls = ({
       const resultIndex = Math.max(0, (event?.results?.length ?? 1) - 1);
       const transcript = event?.results?.[resultIndex]?.[0]?.transcript?.trim() ?? "";
       if (transcript) {
+        markSpeechDetected();
         onTranscript(transcript);
       }
     };
     recognition.onerror = (event) => {
+      clearSpeechIdleTimer();
       setIsSpeechDetected(false);
       onListeningChange?.(false);
       onSpeechDetectedChange?.(false);
@@ -131,6 +152,7 @@ export const VoiceControls = ({
       }
     };
     recognition.onend = () => {
+      clearSpeechIdleTimer();
       setIsSpeechDetected(false);
       onListeningChange?.(false);
       onSpeechDetectedChange?.(false);
@@ -152,6 +174,7 @@ export const VoiceControls = ({
 
   const stopListening = () => {
     clearRestartTimer();
+    clearSpeechIdleTimer();
     if (recognitionRef.current) {
       recognitionRef.current.stop();
     }
@@ -174,6 +197,12 @@ export const VoiceControls = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, disabled]);
+
+  useEffect(() => {
+    return () => {
+      clearSpeechIdleTimer();
+    };
+  }, []);
 
   if (!voiceConfig.enabled) return null;
 

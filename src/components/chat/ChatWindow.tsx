@@ -100,7 +100,7 @@ export const ChatWindow = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
-  const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || !enableVoice);
+  const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
     gesture: "idle",
@@ -157,7 +157,7 @@ export const ChatWindow = ({
   }, []);
 
   const trySpeakOpeningGreeting = useCallback(() => {
-    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
+    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
     if (!isEmbedVisible) return;
     if (!avatarReady || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -184,7 +184,7 @@ export const ChatWindow = ({
       setAssistantLipSyncActive(false);
     };
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
+  }, [avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
 
   const unlockAudio = () => {
     if (!audioUnlocked) {
@@ -518,13 +518,34 @@ export const ChatWindow = ({
       {session.phase === "completed" ? null : (
         <>
           {nextFieldRequest ? (
-            <StructuredFieldPrompt
-              request={nextFieldRequest}
-              onSubmit={handleFieldSend}
-              disabled={isLoading}
-            />
+            enableVoice && viewMode === "voice" ? (
+              <div
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  right: 12,
+                  bottom: 74,
+                  zIndex: 21,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  boxShadow: "0 10px 28px rgba(15,23,42,.24)"
+                }}
+              >
+                <StructuredFieldPrompt
+                  request={nextFieldRequest}
+                  onSubmit={handleFieldSend}
+                  disabled={isLoading}
+                />
+              </div>
+            ) : (
+              <StructuredFieldPrompt
+                request={nextFieldRequest}
+                onSubmit={handleFieldSend}
+                disabled={isLoading}
+              />
+            )
           ) : null}
-          {(viewMode === "text" || !enableVoice) && !isLoading ? (
+          {!enableVoice && !isLoading ? (
             <ChatInput onSend={handleMessageSend} disabled={isLoading} />
           ) : null}
         </>

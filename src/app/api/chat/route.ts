@@ -160,7 +160,9 @@ export async function POST(request: NextRequest) {
     };
   }
 
-  const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields);
+  const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {
+    inferredIntent: workingSession.inferredIntent
+  });
   const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
     Boolean(workingSession.collectedFields[field])
   );
