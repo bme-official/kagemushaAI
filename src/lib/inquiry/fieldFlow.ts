@@ -35,8 +35,15 @@ export const getNextFieldRequest = (
   }
 
   // 問い合わせ本文と意図が揃ってから連絡先情報を収集する。
+  // 既にひとつでも連絡先フィールドが収集済みの場合は inferredIntent がなくても継続する
+  // （フィールド送信ターンで AI が inferredIntent:null を返しても途切れないようにする）。
+  const alreadyCollecting = Boolean(
+    collected.name || collected.email || collected.organization
+  );
   const canAskIdentityFields = Boolean(
-    collected.inquiryBody && context?.inferredIntent && context?.shouldCollectContact
+    collected.inquiryBody &&
+    (context?.inferredIntent || alreadyCollecting) &&
+    context?.shouldCollectContact
   );
   if (!canAskIdentityFields) return null;
 

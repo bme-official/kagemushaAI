@@ -141,11 +141,23 @@ export async function POST(request: NextRequest) {
     collectedFields: { ...session.collectedFields }
   };
 
-  // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）
+  // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）。
+  // ただし services / kana などがサーバー側で空の場合はクライアント送信値を保持する。
   const serverSettings = await fetchServerAvatarSettings();
+  const clientSettings = body.avatarSettings ?? {};
   const effectiveAvatarSettings: ChatApiRequest["avatarSettings"] = serverSettings
-    ? { ...(body.avatarSettings ?? {}), ...serverSettings }
-    : (body.avatarSettings ?? undefined);
+    ? {
+        ...clientSettings,
+        ...serverSettings,
+        // サーバーに services が未設定ならクライアント側の services を使う
+        services: serverSettings.services?.length
+          ? serverSettings.services
+          : (clientSettings.services?.length ? clientSettings.services : serverSettings.services),
+        // kana はどちらかがあれば優先する
+        avatarNameKana: serverSettings.avatarNameKana || clientSettings.avatarNameKana,
+        companyNameKana: serverSettings.companyNameKana || clientSettings.companyNameKana
+      }
+    : (clientSettings as ChatApiRequest["avatarSettings"] | undefined);
 
   let userText: string | undefined;
   if (body.userInput) {
@@ -208,8 +220,10 @@ export async function POST(request: NextRequest) {
 
   const aiResult = await callOpenAI(workingSession, userText, effectiveAvatarSettings);
   if (aiResult) {
-    workingSession.inferredCategory = aiResult.inferredCategory;
-    workingSession.inferredIntent = aiResult.inferredIntent;
+    // inferredIntent / inferredCategory は AI が null を返した場合でも前ターンの値を保持する。
+    // フィールド送信ターン（userText 未定義）で AI が分類不能でも収集フローが途切れないようにする。
+    workingSession.inferredCategory = aiResult.inferredCategory ?? workingSession.inferredCategory;
+    workingSession.inferredIntent = aiResult.inferredIntent ?? workingSession.inferredIntent;
     workingSession.urgency = aiResult.urgency;
     workingSession.needsHuman = aiResult.needsHuman;
     workingSession.collectedFields = {
