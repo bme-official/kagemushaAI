@@ -20,6 +20,13 @@ const buildWidgetScript = (baseAppUrl: string) => {
       'script[data-bme-chat-widget="1"]:last-of-type, script[data-kagemusha-ai-chat-widget="1"]:last-of-type'
     );
   const appUrl = (scriptEl?.dataset?.appUrl || "${escapedBase}").replace(/\\/$/, "");
+  const appOrigin = (() => {
+    try {
+      return new URL(appUrl).origin;
+    } catch {
+      return "*";
+    }
+  })();
   const buttonLabel = scriptEl?.dataset?.buttonLabel || "${escapedLabel}";
   const modalTitle = scriptEl?.dataset?.modalTitle || "${escapedTitle}";
   const iframePath = scriptEl?.dataset?.iframePath || "${escapedPath}";
@@ -71,10 +78,23 @@ const buildWidgetScript = (baseAppUrl: string) => {
   iframe.allow = "microphone *";
   iframe.referrerPolicy = "strict-origin-when-cross-origin";
 
+  const notifyIframeVisibility = (visible) => {
+    if (!iframe.contentWindow) return;
+    iframe.contentWindow.postMessage(
+      {
+        type: "kagemusha-chat-visibility",
+        visible
+      },
+      appOrigin
+    );
+  };
+
   const open = () => {
     if (!iframe.src) {
       const source = encodeURIComponent(window.location.href);
       iframe.src = appUrl + iframePath + "?source=" + source + "&audio=1";
+    } else {
+      notifyIframeVisibility(true);
     }
     backdrop.classList.add("open");
     backdrop.setAttribute("aria-hidden", "false");
@@ -83,6 +103,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const close = () => {
     backdrop.classList.remove("open");
     backdrop.setAttribute("aria-hidden", "true");
+    notifyIframeVisibility(false);
   };
 
   button.addEventListener("click", open);
@@ -97,6 +118,9 @@ const buildWidgetScript = (baseAppUrl: string) => {
   modal.appendChild(header);
   modal.appendChild(iframe);
   backdrop.appendChild(modal);
+  iframe.addEventListener("load", () => {
+    notifyIframeVisibility(backdrop.classList.contains("open"));
+  });
 
   const mount = () => {
     document.body.appendChild(button);

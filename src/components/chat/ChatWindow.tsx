@@ -98,6 +98,7 @@ export const ChatWindow = ({
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [micEnabled, setMicEnabled] = useState(enableVoice && voiceConfig.enabled && voiceConfig.sttEnabled);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || !enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
@@ -119,8 +120,30 @@ export const ChatWindow = ({
     Boolean(avatarRuntimeConfig.modelUrl) &&
     avatarRuntimeConfig.modelUrl.toLowerCase().endsWith(".vrm");
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleMessage = (event: MessageEvent<{ type?: string; visible?: boolean }>) => {
+      if (event.data?.type !== "kagemusha-chat-visibility") return;
+      setIsEmbedVisible(Boolean(event.data.visible));
+    };
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isEmbedVisible) return;
+    setIsSpeaking(false);
+    setIsSpeechDetected(false);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, [isEmbedVisible]);
+
   const trySpeakOpeningGreeting = useCallback(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
+    if (!isEmbedVisible) return;
     if (!avatarReady || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     if (latestAssistant) {
@@ -138,7 +161,7 @@ export const ChatWindow = ({
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, avatarReady, enableVoice, latestAssistant, ttsEnabled]);
+  }, [audioUnlocked, avatarReady, enableVoice, isEmbedVisible, latestAssistant, ttsEnabled]);
 
   const unlockAudio = () => {
     if (!audioUnlocked) {
@@ -151,6 +174,7 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
+    if (!isEmbedVisible) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
     if (!latestAssistant) return;
@@ -166,7 +190,7 @@ export const ChatWindow = ({
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, enableVoice, latestAssistant, ttsEnabled]);
+  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
@@ -310,11 +334,7 @@ export const ChatWindow = ({
     });
   };
 
-  const shouldShowTextInput =
-    (viewMode === "text" || !enableVoice) &&
-    session.phase === "collecting" &&
-    !nextFieldRequest &&
-    !isLoading;
+  const shouldShowTextInput = !enableVoice && session.phase === "collecting" && !nextFieldRequest && !isLoading;
 
   return (
     <section
@@ -378,8 +398,16 @@ export const ChatWindow = ({
       ) : null}
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" }}>
-        {viewMode === "voice" && enableVoice ? (
-          <div style={{ flex: 1, minHeight: 0, position: "relative", padding: 12 }}>
+        {enableVoice ? (
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              position: "relative",
+              padding: 12,
+              display: viewMode === "voice" ? "block" : "none"
+            }}
+          >
             <div
               style={{
                 height: "100%",
@@ -410,7 +438,7 @@ export const ChatWindow = ({
                 </div>
               )}
               <VoiceControls
-                disabled={isLoading}
+                disabled={isLoading || !isEmbedVisible}
                 onTranscript={handleMessageSend}
                 micEnabled={micEnabled}
                 onToggleMic={setMicEnabled}
@@ -423,30 +451,29 @@ export const ChatWindow = ({
               />
             </div>
           </div>
-        ) : (
-          <div
-            style={{
-              flex: 1,
-              overflowY: "auto",
-              padding: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8
-            }}
-          >
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            {session.phase === "confirming" && session.summaryDraft ? (
-              <ConversationSummary summary={session.summaryDraft} />
-            ) : null}
-          </div>
-        )}
+        ) : null}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            padding: 12,
+            display: viewMode === "text" || !enableVoice ? "flex" : "none",
+            flexDirection: "column",
+            gap: 8
+          }}
+        >
+          {messages.map((message) => (
+            <MessageBubble key={message.id} message={message} />
+          ))}
+          {session.phase === "confirming" && session.summaryDraft ? (
+            <ConversationSummary summary={session.summaryDraft} />
+          ) : null}
+        </div>
       </div>
 
       {enableVoice && viewMode === "text" ? (
         <VoiceControls
-          disabled={isLoading}
+          disabled={isLoading || !isEmbedVisible}
           onTranscript={handleMessageSend}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}
