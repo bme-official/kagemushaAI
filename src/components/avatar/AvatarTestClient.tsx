@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { VRMCanvas } from "@/components/avatar/VRMCanvas";
 import type {
@@ -112,8 +112,69 @@ export const AvatarTestClient = () => {
   const [saveMessage, setSaveMessage] = useState("");
   const activeUrl = customUrl.trim() || selectedUrl;
 
+  const applySettingsPayload = useCallback((parsed: {
+    modelUrl?: string;
+    avatarName?: string;
+    avatarNameKana?: string;
+    avatarAge?: string;
+    companyName?: string;
+    companyNameKana?: string;
+    voiceModel?: string;
+    profile?: string;
+    services?: ServiceItem[];
+    statuses?: string[];
+    statusMappings?: Record<string, StatusMapping>;
+  }) => {
+    if (parsed.modelUrl) {
+      if (candidates.includes(parsed.modelUrl)) {
+        setSelectedUrl(parsed.modelUrl);
+        setCustomUrl("");
+      } else {
+        setCustomUrl(parsed.modelUrl);
+      }
+    }
+    if (parsed.avatarName) setAvatarName(parsed.avatarName);
+    if (parsed.avatarNameKana) setAvatarNameKana(parsed.avatarNameKana);
+    if (parsed.avatarAge) setAvatarAge(parsed.avatarAge);
+    if (parsed.companyName) setCompanyName(parsed.companyName);
+    if (parsed.companyNameKana) setCompanyNameKana(parsed.companyNameKana);
+    if (parsed.voiceModel) setVoiceModel(parsed.voiceModel);
+    if (parsed.profile) setProfile(parsed.profile);
+    if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
+    if (parsed.statuses?.length) setStatuses(parsed.statuses);
+    if (parsed.statusMappings) setStatusMappings(parsed.statusMappings);
+  }, [candidates]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
+    let cancelled = false;
+    const loadFromServer = async () => {
+      try {
+        const response = await fetch("/api/avatar-settings", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          settings?: {
+            modelUrl?: string;
+            avatarName?: string;
+            avatarNameKana?: string;
+            avatarAge?: string;
+            companyName?: string;
+            companyNameKana?: string;
+            voiceModel?: string;
+            profile?: string;
+            services?: ServiceItem[];
+            statuses?: string[];
+            statusMappings?: Record<string, StatusMapping>;
+          } | null;
+        };
+        if (cancelled || !data.settings) return;
+        applySettingsPayload(data.settings);
+      } catch {
+        // ignore server load error and fallback to localStorage
+      }
+    };
+    loadFromServer();
+
     try {
       const raw = window.localStorage.getItem("kagemusha-avatar-settings");
       if (!raw) return;
@@ -130,49 +191,45 @@ export const AvatarTestClient = () => {
         statuses?: string[];
         statusMappings?: Record<string, StatusMapping>;
       };
-      if (parsed.modelUrl) {
-        if (candidates.includes(parsed.modelUrl)) {
-          setSelectedUrl(parsed.modelUrl);
-          setCustomUrl("");
-        } else {
-          setCustomUrl(parsed.modelUrl);
-        }
-      }
-      if (parsed.avatarName) setAvatarName(parsed.avatarName);
-      if (parsed.avatarNameKana) setAvatarNameKana(parsed.avatarNameKana);
-      if (parsed.avatarAge) setAvatarAge(parsed.avatarAge);
-      if (parsed.companyName) setCompanyName(parsed.companyName);
-      if (parsed.companyNameKana) setCompanyNameKana(parsed.companyNameKana);
-      if (parsed.voiceModel) setVoiceModel(parsed.voiceModel);
-      if (parsed.profile) setProfile(parsed.profile);
-      if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
-      if (parsed.statuses?.length) setStatuses(parsed.statuses);
-      if (parsed.statusMappings) setStatusMappings(parsed.statusMappings);
+      applySettingsPayload(parsed);
     } catch {
       // ignore broken saved payload
     }
-  }, [candidates]);
+    return () => {
+      cancelled = true;
+    };
+  }, [applySettingsPayload]);
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     if (typeof window === "undefined") return;
+    const payload = {
+      modelUrl: activeUrl,
+      avatarName,
+      avatarNameKana,
+      avatarAge,
+      companyName,
+      companyNameKana,
+      voiceModel,
+      profile,
+      services,
+      statuses,
+      statusMappings
+    };
     window.localStorage.setItem(
       "kagemusha-avatar-settings",
-      JSON.stringify({
-        modelUrl: activeUrl,
-        avatarName,
-        avatarNameKana,
-        avatarAge,
-        companyName,
-        companyNameKana,
-        voiceModel,
-        profile,
-        services,
-        statuses,
-        statusMappings
-      })
+      JSON.stringify(payload)
     );
     window.dispatchEvent(new Event("kagemusha-avatar-settings-updated"));
-    setSaveMessage(`保存しました (${new Date().toLocaleTimeString("ja-JP")})`);
+    try {
+      await fetch("/api/avatar-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: payload })
+      });
+      setSaveMessage(`保存しました（サイト全体に反映） ${new Date().toLocaleTimeString("ja-JP")}`);
+    } catch {
+      setSaveMessage(`ローカルには保存済み（サーバー保存失敗） ${new Date().toLocaleTimeString("ja-JP")}`);
+    }
   };
 
   const pickRandom = <T,>(values: T[], fallback: T) => {

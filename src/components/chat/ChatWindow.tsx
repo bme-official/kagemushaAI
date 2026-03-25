@@ -282,6 +282,25 @@ export const ChatWindow = ({
   }, [applyRuntimeSettings, initialAvatarSettings, parseRuntimeSettings]);
 
   useEffect(() => {
+    let cancelled = false;
+    const loadServerSettings = async () => {
+      try {
+        const response = await fetch("/api/avatar-settings", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as { settings?: RuntimeAvatarSettings | null };
+        if (cancelled || !data.settings) return;
+        applyRuntimeSettings(data.settings);
+      } catch {
+        // ignore server settings error
+      }
+    };
+    loadServerSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyRuntimeSettings]);
+
+  useEffect(() => {
     if (isEmbedVisible) return;
     setIsSpeaking(false);
     setIsSpeechDetected(false);
@@ -700,6 +719,7 @@ export const ChatWindow = ({
   };
 
   const handleMessageSend = async (text: string) => {
+    if (isLoading) return;
     if (nextFieldRequest?.fieldName === "confirmSubmit") {
       const normalized = text.trim().toLowerCase();
       const confirmed = /^(yes|y|はい|送信|ok|お願いします)$/.test(normalized) ? "yes" : "no";
@@ -863,7 +883,7 @@ export const ChatWindow = ({
 
       {enableVoice ? (
         <VoiceControls
-          disabled={isLoading || !isEmbedVisible}
+          disabled={!isEmbedVisible}
           onTranscript={handleMessageSend}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}

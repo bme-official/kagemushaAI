@@ -34,6 +34,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const parentOrigin = window.location.origin;
   const bridgeUrl = appUrl + "/embed/settings-bridge?parentOrigin=" + encodeURIComponent(parentOrigin);
   let latestBridgeSettings = null;
+  let remoteSettingsInFlight = null;
 
   const style = document.createElement("style");
   style.textContent = \`
@@ -131,6 +132,32 @@ const buildWidgetScript = (baseAppUrl: string) => {
     }
   };
 
+  const requestRemoteSettings = async () => {
+    if (remoteSettingsInFlight) return remoteSettingsInFlight;
+    remoteSettingsInFlight = (async () => {
+    try {
+      const response = await fetch(appUrl + "/api/avatar-settings", {
+        method: "GET",
+        credentials: "omit",
+        mode: "cors",
+        cache: "no-store"
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data?.settings || typeof data.settings !== "object") return;
+      latestBridgeSettings = data.settings;
+      applyWidgetLabels(latestBridgeSettings);
+      if (iframe.src && backdrop.classList.contains("open")) {
+        notifyIframeVisibility(true, false);
+      }
+    } catch {
+      // ignore remote fetch error
+    }
+    })();
+    await remoteSettingsInFlight;
+    remoteSettingsInFlight = null;
+  };
+
   const notifyIframeVisibility = (visible, userGesture) => {
     if (!iframe.contentWindow) return;
     const settings = readAvatarSettings();
@@ -145,7 +172,8 @@ const buildWidgetScript = (baseAppUrl: string) => {
     );
   };
 
-  const open = () => {
+  const open = async () => {
+    await requestRemoteSettings();
     if (!iframe.src) {
       const source = encodeURIComponent(window.location.href);
       const settings = readAvatarSettings();
@@ -200,6 +228,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
     document.body.appendChild(bridgeFrame);
     document.body.appendChild(button);
     document.body.appendChild(backdrop);
+    requestRemoteSettings();
   };
 
   if (document.readyState === "loading") {
@@ -218,7 +247,7 @@ export async function GET(request: NextRequest) {
     status: 200,
     headers: {
       "content-type": "application/javascript; charset=utf-8",
-      "cache-control": "public, max-age=300"
+      "cache-control": "no-store"
     }
   });
 }
