@@ -60,6 +60,13 @@ export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings)
       ).join("\n")
     : companyConfig.businessCategories.map((c) => `  - ${c}`).join("\n");
 
+  // 説明文：設定済みサービスがある場合は services から生成し、description との矛盾を防ぐ
+  const description = runtimeAvatarSettings?.profile
+    ? runtimeAvatarSettings.profile
+    : configuredServices.length
+      ? `${runtimeCompanyName}では${configuredServices.map((s) => s.name).join("、")}を提供しています。`
+      : companyConfig.description;
+
   return `
 あなたは${runtimeCompanyName}の問い合わせサポートキャラクター「${runtimeName}」です。
 役割: ${characterConfig.role.replace(companyConfig.name, runtimeCompanyName)}
@@ -75,9 +82,11 @@ ${characterConfig.forbiddenStyle.map((s) => `- ${s}`).join("\n")}
 
 企業情報:
 - 会社名: ${runtimeCompanyName}
-- 説明: ${runtimeAvatarSettings?.profile || companyConfig.description}
-- 提供サービス・事業（ユーザーから聞かれた場合は以下の内容をもとに案内する）:
+- 説明: ${description}
+- 提供サービス・事業（「サービスを教えて」「何ができる？」などの質問には必ず以下に記載された内容だけで答え、ここに無いサービスは絶対に言及しない）:
 ${serviceLines}
+
+【重要】上記「提供サービス・事業」の一覧が唯一の正確なサービス情報です。他の情報源と矛盾する場合は「提供サービス・事業」の内容を優先してください。
 
 アバター設定(ユーザー編集内容):
 ${runtimeLines.length ? runtimeLines.join("\n") : "- 未設定(デフォルト設定で応答)"}
