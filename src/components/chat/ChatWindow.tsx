@@ -327,15 +327,9 @@ export const ChatWindow = ({
     }
   }, []);
 
-  // モバイル端末ではスピーカーをデフォルトでミュートにする（クライアント側でのみ判定）
-  useEffect(() => {
-    if (typeof navigator === "undefined") return;
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile) {
-      setSpeakerMuted(true);
-      speakerMutedRef.current = true;
-    }
-  }, []);
+  // ※ モバイルデフォルトミュートは削除。PC と同様、デフォルトで音あり。
+  // iOS では autoplay がブロックされるため onError → lastSpokenMessageIdRef=null でリセットし、
+  // ユーザーが最初にマイクまたはスピーカーボタンを押したタイミングで unlockAudio → TTS 再試行する。
 
   useEffect(() => {
     if (typeof window === "undefined") return;

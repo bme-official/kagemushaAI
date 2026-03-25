@@ -77,6 +77,13 @@ export const VoiceControls = ({
   const restartTimeoutRef = useRef<number | null>(null);
   const speechIdleTimeoutRef = useRef<number | null>(null);
 
+  // iOS Safari では recognition.start() をユーザージェスチャー内で同期的に呼ぶ必要がある。
+  // useMemo で初期評価（SSR時は false）。
+  const isIOS = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /iphone|ipad|ipod/i.test(navigator.userAgent);
+  }, []);
+
   // コールバック ref: recognition が古いクロージャを保持しても常に最新版を呼ぶ
   // （再レンダーで session が更新された handleVoiceTranscript を確実に使用する）
   const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange });
@@ -189,10 +196,16 @@ export const VoiceControls = ({
       setIsSpeechDetected(false);
       callbacksRef.current.onListeningChange?.(false);
       callbacksRef.current.onSpeechDetectedChange?.(false);
-      if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
+      const err = event?.error;
+      if (err === "not-allowed" || err === "audio-capture") {
+        // 明確なパーミッション拒否 → 再試行しない
         shouldKeepListeningRef.current = false;
         setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
+      } else if (err === "service-not-allowed") {
+        // iOS: ジェスチャー外で呼ばれた可能性。自動再起動は止め、次のボタン操作を待つ
+        shouldKeepListeningRef.current = false;
       }
+      // network / aborted / no-speech などは onend で再起動される
     };
     recognition.onend = () => {
       clearSpeechIdleTimer();
@@ -231,21 +244,34 @@ export const VoiceControls = ({
   useEffect(() => {
     if (!voiceConfig.enabled || !voiceConfig.sttEnabled) return;
     shouldKeepListeningRef.current = micEnabled && !disabled;
+
     if (micEnabled && !disabled) {
-      startListening();
+      // iOS: recognition.start() はユーザージェスチャー内（マイクボタン onClick）で
+      // 同期的に呼ばれるため、useEffect からは呼ばない（非同期になりジェスチャー要件を満たせない）。
+      // 非 iOS はジェスチャー不要なので useEffect から自動起動する。
+      if (!isIOS) {
+        startListening();
+      }
+      // iOS の場合: マイクボタン click ハンドラで直接 startListening() を呼ぶ（後述）
     } else {
-      stopListening();
-    }
-    return () => {
+      // 明示的に停止するときのみ止める（クリーンアップで止めない）
       shouldKeepListeningRef.current = false;
       stopListening();
-    };
+    }
+    // クリーンアップで stopListening() を呼ぶと「ON になった直後」の
+    // React エフェクト入れ替えで認識が止まってしまうため省略する。
+    // アンマウント時は別途専用エフェクトで止める。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micEnabled, disabled]);
+  }, [micEnabled, disabled, isIOS]);
 
+  // アンマウント時のみ停止（エフェクト入れ替え時に止まらないよう分離）
   useEffect(() => {
     return () => {
+      shouldKeepListeningRef.current = false;
+      clearRestartTimer();
       clearSpeechIdleTimer();
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
     };
   }, []);
 
@@ -354,8 +380,15 @@ export const VoiceControls = ({
         <button
           type="button"
           onClick={() => {
+            const newEnabled = !micEnabled;
             onUserInteraction?.();
-            onToggleMic(!micEnabled);
+            onToggleMic(newEnabled);
+            // iOS: recognition.start() はジェスチャー内で同期的に呼ぶ必要がある。
+            // useEffect は非同期（次フレーム）になるためここで直接起動する。
+            if (newEnabled && isIOS) {
+              shouldKeepListeningRef.current = true;
+              startListening();
+            }
           }}
           disabled={disabled || !voiceConfig.sttEnabled}
           aria-label="音声入力の切り替え"
