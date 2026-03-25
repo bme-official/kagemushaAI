@@ -58,6 +58,20 @@ export type ChatSessionState = {
 export type ChatApiRequest = {
   session: ChatSessionState;
   inputMode?: "voice" | "text";
+  avatarSettings?: {
+    modelUrl?: string;
+    avatarName?: string;
+    avatarNameKana?: string;
+    avatarAge?: string;
+    companyName?: string;
+    companyNameKana?: string;
+    profile?: string;
+    services?: Array<{
+      name: string;
+      ruby: string;
+      description: string;
+    }>;
+  };
   userInput?: string;
   fieldResponse?: {
     fieldName: keyof CollectedContactFields | "confirmSubmit";

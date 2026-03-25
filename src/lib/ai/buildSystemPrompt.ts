@@ -2,7 +2,54 @@ import { characterConfig } from "@/config/character.config";
 import { companyConfig } from "@/config/company.config";
 import { inquiryConfig } from "@/config/inquiry.config";
 
-export const buildSystemPrompt = (): string => {
+type RuntimeAvatarSettings = {
+  avatarName?: string;
+  avatarNameKana?: string;
+  avatarAge?: string;
+  companyName?: string;
+  companyNameKana?: string;
+  profile?: string;
+  services?: Array<{
+    name: string;
+    ruby: string;
+    description: string;
+  }>;
+};
+
+export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings): string => {
+  const runtimeLines: string[] = [];
+  if (runtimeAvatarSettings?.avatarName) {
+    runtimeLines.push(`- 表示名: ${runtimeAvatarSettings.avatarName}`);
+  }
+  if (runtimeAvatarSettings?.avatarNameKana) {
+    runtimeLines.push(`- 表示名(読み): ${runtimeAvatarSettings.avatarNameKana}`);
+  }
+  if (runtimeAvatarSettings?.avatarAge) {
+    runtimeLines.push(`- 年齢: ${runtimeAvatarSettings.avatarAge}`);
+  }
+  if (runtimeAvatarSettings?.companyName) {
+    runtimeLines.push(`- 企業名: ${runtimeAvatarSettings.companyName}`);
+  }
+  if (runtimeAvatarSettings?.companyNameKana) {
+    runtimeLines.push(`- 企業名(読み): ${runtimeAvatarSettings.companyNameKana}`);
+  }
+  if (runtimeAvatarSettings?.profile) {
+    runtimeLines.push(`- プロフィール: ${runtimeAvatarSettings.profile}`);
+  }
+  if (runtimeAvatarSettings?.services?.length) {
+    runtimeLines.push("- サービス一覧:");
+    runtimeAvatarSettings.services
+      .filter((service) => service.name || service.description)
+      .slice(0, 10)
+      .forEach((service, index) => {
+        runtimeLines.push(
+          `  ${index + 1}. ${service.name || "名称未設定"} (${service.ruby || "読み未設定"}) - ${
+            service.description || "説明未設定"
+          }`
+        );
+      });
+  }
+
   return `
 あなたは${companyConfig.name}の問い合わせサポートキャラクター「${characterConfig.name}」です。
 役割: ${characterConfig.role}
@@ -20,6 +67,9 @@ ${characterConfig.forbiddenStyle.map((s) => `- ${s}`).join("\n")}
 - 会社名: ${companyConfig.name}
 - 説明: ${companyConfig.description}
 - 事業カテゴリ: ${companyConfig.businessCategories.join(", ")}
+
+アバター設定(ユーザー編集内容):
+${runtimeLines.length ? runtimeLines.join("\n") : "- 未設定(デフォルト設定で応答)"}
 
 問い合わせ種別候補:
 ${inquiryConfig.inquiryIntents.map((intent) => `- ${intent}`).join("\n")}

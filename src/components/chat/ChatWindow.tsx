@@ -77,6 +77,22 @@ const detectExpression = (
   return "neutral";
 };
 
+type RuntimeAvatarSettings = {
+  modelUrl?: string;
+  avatarName?: string;
+  avatarNameKana?: string;
+  avatarAge?: string;
+  companyName?: string;
+  companyNameKana?: string;
+  voiceModel?: string;
+  profile?: string;
+  services?: Array<{
+    name: string;
+    ruby: string;
+    description: string;
+  }>;
+};
+
 export const ChatWindow = ({
   sourcePage = "/contact",
   enableVoice = false,
@@ -103,6 +119,8 @@ export const ChatWindow = ({
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
+  const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
+  const [avatarModelUrl, setAvatarModelUrl] = useState(avatarRuntimeConfig.modelUrl);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
     pose: "neutral",
     gesture: "idle",
@@ -121,9 +139,7 @@ export const ChatWindow = ({
     [messages]
   );
   const canRenderVrm =
-    avatarRuntimeConfig.enabled &&
-    Boolean(avatarRuntimeConfig.modelUrl) &&
-    avatarRuntimeConfig.modelUrl.toLowerCase().endsWith(".vrm");
+    avatarRuntimeConfig.enabled && Boolean(avatarModelUrl) && avatarModelUrl.toLowerCase().endsWith(".vrm");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -142,22 +158,35 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const syncAvatarName = () => {
+    const syncAvatarSettings = () => {
       try {
         const raw = window.localStorage.getItem("kagemusha-avatar-settings");
         if (!raw) return;
-        const parsed = JSON.parse(raw) as { avatarName?: string };
+        const parsed = JSON.parse(raw) as RuntimeAvatarSettings;
+        setRuntimeAvatarSettings(parsed);
         if (parsed.avatarName) {
           setAvatarNameDisplay(parsed.avatarName);
+        }
+        if (parsed.modelUrl) {
+          setAvatarReady(false);
+          setAvatarModelUrl(parsed.modelUrl);
+        } else {
+          setAvatarModelUrl(avatarRuntimeConfig.modelUrl);
         }
       } catch {
         // ignore local storage parse error
       }
     };
-    syncAvatarName();
-    window.addEventListener("kagemusha-avatar-settings-updated", syncAvatarName);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== "kagemusha-avatar-settings") return;
+      syncAvatarSettings();
+    };
+    syncAvatarSettings();
+    window.addEventListener("kagemusha-avatar-settings-updated", syncAvatarSettings);
+    window.addEventListener("storage", handleStorage);
     return () => {
-      window.removeEventListener("kagemusha-avatar-settings-updated", syncAvatarName);
+      window.removeEventListener("kagemusha-avatar-settings-updated", syncAvatarSettings);
+      window.removeEventListener("storage", handleStorage);
     };
   }, []);
 
@@ -184,36 +213,25 @@ export const ChatWindow = ({
 
   const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    try {
-      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as { voiceModel?: string; avatarNameKana?: string };
-      const voices = window.speechSynthesis.getVoices();
-      const voice = voices.find((item) => {
-        if (parsed.voiceModel && item.name.toLowerCase().includes(parsed.voiceModel.toLowerCase())) {
-          return true;
-        }
-        return item.lang.toLowerCase().startsWith(voiceConfig.locale.toLowerCase());
-      });
-      if (voice) {
-        utterance.voice = voice;
-      }
-      if (parsed.avatarNameKana) {
-        utterance.text = utterance.text.replace(characterConfig.name, parsed.avatarNameKana);
-      }
-    } catch {
-      // ignore malformed localStorage payload
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = runtimeAvatarSettings.voiceModel?.toLowerCase();
+    const voice =
+      (preferred
+        ? voices.find((item) => item.name.toLowerCase().includes(preferred))
+        : undefined) ?? voices.find((item) => item.lang.toLowerCase().startsWith("ja"));
+    if (voice) {
+      utterance.voice = voice;
     }
-  }, []);
+    if (runtimeAvatarSettings.avatarNameKana) {
+      utterance.text = utterance.text.replace(characterConfig.name, runtimeAvatarSettings.avatarNameKana);
+    }
+  }, [runtimeAvatarSettings.avatarNameKana, runtimeAvatarSettings.voiceModel]);
 
   const trySpeakOpeningGreeting = useCallback(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
     if (!isEmbedVisible) return;
-    if (!avatarReady || hasSpokenOpeningRef.current) return;
+    if ((canRenderVrm && !avatarReady) || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    if (latestAssistant) {
-      lastSpokenMessageIdRef.current = latestAssistant.id;
-    }
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(characterConfig.greeting);
     utterance.lang = voiceConfig.locale;
@@ -223,6 +241,9 @@ export const ChatWindow = ({
     utterance.onstart = () => {
       setIsSpeaking(true);
       pulseAssistantLipSync();
+      if (latestAssistant) {
+        lastSpokenMessageIdRef.current = latestAssistant.id;
+      }
       hasSpokenOpeningRef.current = true;
     };
     utterance.onboundary = () => pulseAssistantLipSync();
@@ -235,7 +256,16 @@ export const ChatWindow = ({
       setAssistantLipSyncActive(false);
     };
     window.speechSynthesis.speak(utterance);
-  }, [applyConfiguredVoice, avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
+  }, [
+    applyConfiguredVoice,
+    avatarReady,
+    canRenderVrm,
+    enableVoice,
+    isEmbedVisible,
+    latestAssistant,
+    pulseAssistantLipSync,
+    ttsEnabled
+  ]);
 
   const unlockAudio = () => {
     if (!audioUnlocked) {
@@ -254,7 +284,6 @@ export const ChatWindow = ({
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
 
-    lastSpokenMessageIdRef.current = latestAssistant.id;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(latestAssistant.content);
     utterance.lang = voiceConfig.locale;
@@ -262,6 +291,7 @@ export const ChatWindow = ({
     utterance.pitch = voiceConfig.speechPitch;
     applyConfiguredVoice(utterance);
     utterance.onstart = () => {
+      lastSpokenMessageIdRef.current = latestAssistant.id;
       setIsSpeaking(true);
       pulseAssistantLipSync();
     };
@@ -382,6 +412,7 @@ export const ChatWindow = ({
         body: JSON.stringify({
           session,
           inputMode: enableVoice ? "voice" : "text",
+          avatarSettings: runtimeAvatarSettings,
           ...payload
         })
       });
@@ -561,7 +592,7 @@ export const ChatWindow = ({
             >
               {canRenderVrm ? (
                 <VRMCanvas
-                  modelUrl={avatarRuntimeConfig.modelUrl}
+                  modelUrl={avatarModelUrl}
                   behavior={avatarBehavior}
                   onModelReady={() => setAvatarReady(true)}
                 />

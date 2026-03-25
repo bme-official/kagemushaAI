@@ -33,7 +33,8 @@ const pushMessage = (
 
 const callOpenAI = async (
   session: ChatSessionState,
-  userInput?: string
+  userInput?: string,
+  avatarSettings?: ChatApiRequest["avatarSettings"]
 ): Promise<ChatAgentResult | null> => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -49,7 +50,7 @@ const callOpenAI = async (
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
       messages: [
-        { role: "system", content: buildSystemPrompt() },
+        { role: "system", content: buildSystemPrompt(avatarSettings) },
         ...messages.map((m) => ({ role: m.role, content: m.content }))
       ],
       temperature: 0.4
@@ -152,7 +153,7 @@ export async function POST(request: NextRequest) {
   workingSession.urgency = resultFromRule.urgency;
   workingSession.needsHuman = resultFromRule.needsHuman;
 
-  const aiResult = await callOpenAI(workingSession, userText);
+  const aiResult = await callOpenAI(workingSession, userText, body.avatarSettings);
   if (aiResult) {
     workingSession.inferredCategory = aiResult.inferredCategory;
     workingSession.inferredIntent = aiResult.inferredIntent;

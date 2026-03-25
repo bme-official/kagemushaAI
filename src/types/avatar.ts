@@ -1,4 +1,12 @@
-export type AvatarGestureState = "idle" | "thinking" | "listening" | "explaining" | "emphasis";
+export type AvatarGestureState =
+  | "idle"
+  | "thinking"
+  | "listening"
+  | "explaining"
+  | "emphasis"
+  | "armCross"
+  | "waveHand"
+  | "pointFinger";
 
 export type AvatarVoiceState = "muted" | "listening" | "speaking";
 

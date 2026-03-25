@@ -206,6 +206,36 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(leftHand, { x: 0.12, y: 0.18, z: -0.25 });
           applyBoneRotation(rightHand, { x: 0.12, y: -0.18, z: 0.25 });
           break;
+        case "armCross":
+          applyBoneRotation(head, { x: 0.01, y: -0.02 });
+          applyBoneRotation(leftShoulder, { x: 0.02, z: -0.22 });
+          applyBoneRotation(rightShoulder, { x: 0.02, z: 0.22 });
+          applyBoneRotation(leftUpperArm, { x: -0.35, y: 0.18, z: -0.45 });
+          applyBoneRotation(rightUpperArm, { x: -0.35, y: -0.18, z: 0.45 });
+          applyBoneRotation(leftLowerArm, { x: -0.18, y: 0.38, z: -0.95 });
+          applyBoneRotation(rightLowerArm, { x: -0.18, y: -0.38, z: 0.95 });
+          applyBoneRotation(leftHand, { x: 0.06, y: 0.1, z: 0.42 });
+          applyBoneRotation(rightHand, { x: 0.06, y: -0.1, z: -0.42 });
+          break;
+        case "waveHand":
+          applyBoneRotation(head, { x: -0.02, y: 0.12 });
+          applyBoneRotation(rightShoulder, { x: -0.06, z: 0.36 });
+          applyBoneRotation(rightUpperArm, { x: -0.85, y: -0.18, z: 0.18 });
+          applyBoneRotation(rightLowerArm, { x: -0.52, y: -0.25, z: 1.08 });
+          applyBoneRotation(rightHand, { x: 0.04, y: Math.sin(elapsedSec * 5.2) * 0.42, z: 0.22 });
+          applyBoneRotation(leftUpperArm, { x: -0.04, z: -1.02 });
+          applyBoneRotation(leftLowerArm, { z: -0.14 });
+          break;
+        case "pointFinger":
+          applyBoneRotation(head, { x: -0.02, y: -0.05 });
+          applyBoneRotation(rightUpperArm, { x: -0.2, y: -0.08, z: 0.58 });
+          applyBoneRotation(rightLowerArm, { x: -0.14, y: -0.22, z: 0.84 });
+          applyBoneRotation(rightHand, { x: 0.02, y: -0.1, z: 0.08 });
+          applyBoneRotation(rightIndex, { x: -0.55 });
+          applyBoneRotation(rightMiddle, { x: 0.28 });
+          applyBoneRotation(leftUpperArm, { x: -0.08, z: -1.02 });
+          applyBoneRotation(leftLowerArm, { z: -0.18 });
+          break;
         default:
           break;
       }

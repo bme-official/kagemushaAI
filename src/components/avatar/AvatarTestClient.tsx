@@ -37,7 +37,10 @@ const gestureOptions: Array<{ id: string; value: AvatarGestureState; label: stri
   { id: "explain_general", value: "explaining", label: "説明" },
   { id: "emphasis_point", value: "emphasis", label: "強調" },
   { id: "listening_empathy", value: "listening", label: "共感" },
-  { id: "explain_guide", value: "explaining", label: "案内" }
+  { id: "explain_guide", value: "explaining", label: "案内" },
+  { id: "arm_cross", value: "armCross", label: "腕組み" },
+  { id: "wave_hand", value: "waveHand", label: "手を振る" },
+  { id: "point_finger", value: "pointFinger", label: "指を立てる" }
 ];
 
 const poseOptions: Array<{ value: AvatarPoseState; label: string }> = [
@@ -115,6 +118,7 @@ export const AvatarTestClient = () => {
       const raw = window.localStorage.getItem("kagemusha-avatar-settings");
       if (!raw) return;
       const parsed = JSON.parse(raw) as {
+        modelUrl?: string;
         avatarName?: string;
         avatarNameKana?: string;
         avatarAge?: string;
@@ -126,6 +130,14 @@ export const AvatarTestClient = () => {
         statuses?: string[];
         statusMappings?: Record<string, StatusMapping>;
       };
+      if (parsed.modelUrl) {
+        if (candidates.includes(parsed.modelUrl)) {
+          setSelectedUrl(parsed.modelUrl);
+          setCustomUrl("");
+        } else {
+          setCustomUrl(parsed.modelUrl);
+        }
+      }
       if (parsed.avatarName) setAvatarName(parsed.avatarName);
       if (parsed.avatarNameKana) setAvatarNameKana(parsed.avatarNameKana);
       if (parsed.avatarAge) setAvatarAge(parsed.avatarAge);
@@ -139,13 +151,14 @@ export const AvatarTestClient = () => {
     } catch {
       // ignore broken saved payload
     }
-  }, []);
+  }, [candidates]);
 
   const handleSaveSettings = () => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
       "kagemusha-avatar-settings",
       JSON.stringify({
+        modelUrl: activeUrl,
         avatarName,
         avatarNameKana,
         avatarAge,
