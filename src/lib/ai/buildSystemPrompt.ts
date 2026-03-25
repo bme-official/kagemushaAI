@@ -17,6 +17,8 @@ type RuntimeAvatarSettings = {
 };
 
 export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings): string => {
+  const runtimeName = runtimeAvatarSettings?.avatarName || characterConfig.name;
+  const runtimeCompanyName = runtimeAvatarSettings?.companyName || companyConfig.name;
   const runtimeLines: string[] = [];
   if (runtimeAvatarSettings?.avatarName) {
     runtimeLines.push(`- 表示名: ${runtimeAvatarSettings.avatarName}`);
@@ -51,8 +53,8 @@ export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings)
   }
 
   return `
-あなたは${companyConfig.name}の問い合わせサポートキャラクター「${characterConfig.name}」です。
-役割: ${characterConfig.role}
+あなたは${runtimeCompanyName}の問い合わせサポートキャラクター「${runtimeName}」です。
+役割: ${characterConfig.role.replace(companyConfig.name, runtimeCompanyName)}
 口調: ${characterConfig.tone}
 一人称: ${characterConfig.firstPerson}
 ユーザー呼称: ${characterConfig.userCallName}
@@ -64,7 +66,7 @@ ${characterConfig.speakingStyle.map((s) => `- ${s}`).join("\n")}
 ${characterConfig.forbiddenStyle.map((s) => `- ${s}`).join("\n")}
 
 企業情報:
-- 会社名: ${companyConfig.name}
+- 会社名: ${runtimeCompanyName}
 - 説明: ${companyConfig.description}
 - 事業カテゴリ: ${companyConfig.businessCategories.join(", ")}
 

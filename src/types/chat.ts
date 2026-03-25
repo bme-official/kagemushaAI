@@ -66,6 +66,15 @@ export type ChatApiRequest = {
     companyName?: string;
     companyNameKana?: string;
     profile?: string;
+    statuses?: string[];
+    statusMappings?: Record<
+      string,
+      {
+        expressionOptionIds: string[];
+        poses: Array<"neutral" | "upright" | "friendly" | "leanForward" | "confident">;
+        gestureOptionIds: string[];
+      }
+    >;
     services?: Array<{
       name: string;
       ruby: string;

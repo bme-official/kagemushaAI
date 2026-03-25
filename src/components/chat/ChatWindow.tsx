@@ -86,11 +86,43 @@ type RuntimeAvatarSettings = {
   companyNameKana?: string;
   voiceModel?: string;
   profile?: string;
+  statuses?: string[];
+  statusMappings?: Record<
+    string,
+    {
+      expressionOptionIds: string[];
+      poses: AvatarBehaviorState["pose"][];
+      gestureOptionIds: string[];
+    }
+  >;
   services?: Array<{
     name: string;
     ruby: string;
     description: string;
   }>;
+};
+
+const expressionOptionMap: Record<string, AvatarBehaviorState["expression"]> = {
+  neutral_default: "neutral",
+  smile_happy: "smile",
+  serious_focus: "serious",
+  surprised_alert: "surprised",
+  thinking_deep: "thinking",
+  smile_relief: "smile",
+  serious_sad: "serious"
+};
+
+const gestureOptionMap: Record<string, AvatarBehaviorState["gesture"]> = {
+  idle_wait: "idle",
+  thinking_pose: "thinking",
+  listening_default: "listening",
+  explain_general: "explaining",
+  emphasis_point: "emphasis",
+  listening_empathy: "listening",
+  explain_guide: "explaining",
+  arm_cross: "armCross",
+  wave_hand: "waveHand",
+  point_finger: "pointFinger"
 };
 
 export const ChatWindow = ({
@@ -167,6 +199,22 @@ export const ChatWindow = ({
         if (parsed.avatarName) {
           setAvatarNameDisplay(parsed.avatarName);
         }
+        const runtimeCompany = parsed.companyName || "影武者AI";
+        const runtimeName = parsed.avatarName || characterConfig.name;
+        const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。ご相談内容を整理しながらご案内します。`;
+        setSession((prev) => {
+          if (!prev.messages.length) return prev;
+          const first = prev.messages[0];
+          if (first.role !== "assistant") return prev;
+          if (prev.phase !== "collecting") return prev;
+          return {
+            ...prev,
+            messages: [
+              { ...first, content: openingMessage },
+              ...prev.messages.slice(1)
+            ]
+          };
+        });
         if (parsed.modelUrl) {
           setAvatarReady(false);
           setAvatarModelUrl(parsed.modelUrl);
@@ -211,6 +259,32 @@ export const ChatWindow = ({
     }, 140);
   }, []);
 
+  const resolveStatusMapping = useCallback(
+    (statusLabelCandidates: string[]) => {
+      const mappings = runtimeAvatarSettings.statusMappings;
+      if (!mappings) return null;
+      const entries = Object.entries(mappings);
+      for (const candidate of statusLabelCandidates) {
+        const direct = mappings[candidate];
+        if (direct) {
+          return { status: candidate, mapping: direct };
+        }
+        const hit = entries.find(([key]) => key.includes(candidate) || candidate.includes(key));
+        if (hit) {
+          return { status: hit[0], mapping: hit[1] };
+        }
+      }
+      return null;
+    },
+    [runtimeAvatarSettings.statusMappings]
+  );
+
+  const getOpeningGreetingText = useCallback(() => {
+    const companyName = runtimeAvatarSettings.companyName || "影武者AI";
+    const name = runtimeAvatarSettings.avatarName || characterConfig.name;
+    return `こんにちは、${companyName}のお問い合わせサポート担当 ${name} です。ご相談内容を整理しながらご案内します。`;
+  }, [runtimeAvatarSettings.avatarName, runtimeAvatarSettings.companyName]);
+
   const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const voices = window.speechSynthesis.getVoices();
@@ -218,7 +292,10 @@ export const ChatWindow = ({
     const voice =
       (preferred
         ? voices.find((item) => item.name.toLowerCase().includes(preferred))
-        : undefined) ?? voices.find((item) => item.lang.toLowerCase().startsWith("ja"));
+        : undefined) ??
+      voices.find((item) => item.lang.toLowerCase().startsWith(voiceConfig.locale.toLowerCase())) ??
+      voices.find((item) => item.lang.toLowerCase().startsWith("ja")) ??
+      voices[0];
     if (voice) {
       utterance.voice = voice;
     }
@@ -233,7 +310,7 @@ export const ChatWindow = ({
     if ((canRenderVrm && !avatarReady) || hasSpokenOpeningRef.current) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(characterConfig.greeting);
+    const utterance = new SpeechSynthesisUtterance(getOpeningGreetingText());
     utterance.lang = voiceConfig.locale;
     utterance.rate = voiceConfig.speechRate;
     utterance.pitch = voiceConfig.speechPitch;
@@ -261,6 +338,7 @@ export const ChatWindow = ({
     avatarReady,
     canRenderVrm,
     enableVoice,
+    getOpeningGreetingText,
     isEmbedVisible,
     latestAssistant,
     pulseAssistantLipSync,
@@ -271,9 +349,16 @@ export const ChatWindow = ({
     if (!audioUnlocked) {
       setAudioUnlocked(true);
     }
-    window.setTimeout(() => {
-      trySpeakOpeningGreeting();
-    }, 0);
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        const primer = new SpeechSynthesisUtterance(" ");
+        primer.volume = 0;
+        window.speechSynthesis.speak(primer);
+      } catch {
+        // ignore primer error
+      }
+    }
+    trySpeakOpeningGreeting();
   };
 
   useEffect(() => {
@@ -343,6 +428,26 @@ export const ChatWindow = ({
   }, [enableVoice, ttsEnabled]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const handleVoicesChanged = () => {
+      trySpeakOpeningGreeting();
+    };
+    window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
+    };
+  }, [trySpeakOpeningGreeting]);
+
+  useEffect(() => {
+    if (!isSpeechDetected) return;
+    if (assistantLipSyncTimerRef.current !== null) {
+      window.clearTimeout(assistantLipSyncTimerRef.current);
+      assistantLipSyncTimerRef.current = null;
+    }
+    setAssistantLipSyncActive(false);
+  }, [isSpeechDetected]);
+
+  useEffect(() => {
     return () => {
       if (assistantLipSyncTimerRef.current !== null) {
         window.clearTimeout(assistantLipSyncTimerRef.current);
@@ -352,24 +457,24 @@ export const ChatWindow = ({
 
   useEffect(() => {
     const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
-    const expression = detectExpression(latestAssistantMessage, session.urgency);
+    const fallbackExpression = detectExpression(latestAssistantMessage, session.urgency);
     const voice: AvatarBehaviorState["voice"] = isSpeechDetected
       ? "listening"
       : isSpeaking
         ? "speaking"
         : "muted";
 
-    const gesture: AvatarBehaviorState["gesture"] = isSpeechDetected
+    const fallbackGesture: AvatarBehaviorState["gesture"] = isSpeechDetected
       ? "listening"
       : isLoading
         ? "thinking"
-        : isSpeaking
-          ? expression === "serious"
+        : isSpeaking || isListening
+          ? fallbackExpression === "serious"
             ? "emphasis"
             : "explaining"
           : "idle";
 
-    const statusLabel = isSpeechDetected
+    const fallbackStatusLabel = isSpeechDetected
       ? "音声を聞き取り中..."
       : isSpeaking
         ? "回答を読み上げ中..."
@@ -379,8 +484,7 @@ export const ChatWindow = ({
             ? "優先度高めで確認中"
             : "ご相談受付中";
 
-    const lipSyncActive = assistantLipSyncActive;
-    const pose: AvatarBehaviorState["pose"] = isSpeechDetected
+    const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"
       : isSpeaking
         ? "friendly"
@@ -389,16 +493,50 @@ export const ChatWindow = ({
           : session.urgency === "high"
             ? "confident"
             : "neutral";
+
+    const statusCandidates = isSpeechDetected
+      ? ["聞き取り", "共感", "listening"]
+      : isLoading
+        ? ["考え中", "thinking"]
+        : isSpeaking
+          ? ["説明中", "案内", "speaking"]
+          : fallbackExpression === "smile"
+            ? ["嬉しい", "安心"]
+            : fallbackExpression === "serious"
+              ? ["緊張", "真剣", "悲しい"]
+              : fallbackExpression === "thinking"
+                ? ["考え中", "検討中"]
+                : ["通常", "待機"];
+
+    const resolved = resolveStatusMapping(statusCandidates);
+    const resolvedExpression = resolved?.mapping.expressionOptionIds.length
+      ? expressionOptionMap[resolved.mapping.expressionOptionIds[0]] ?? fallbackExpression
+      : fallbackExpression;
+    const resolvedGesture = resolved?.mapping.gestureOptionIds.length
+      ? gestureOptionMap[resolved.mapping.gestureOptionIds[0]] ?? fallbackGesture
+      : fallbackGesture;
+    const resolvedPose = resolved?.mapping.poses.length ? resolved.mapping.poses[0] : fallbackPose;
+    const statusLabel = resolved?.status ?? fallbackStatusLabel;
+    const lipSyncActive = !isSpeechDetected && assistantLipSyncActive;
     const nextBehavior: AvatarBehaviorState = {
-      pose,
-      gesture,
+      pose: resolvedPose,
+      gesture: resolvedGesture,
       voice,
-      expression,
+      expression: resolvedExpression,
       lipSyncActive,
       statusLabel
     };
     setAvatarBehavior(nextBehavior);
-  }, [assistantLipSyncActive, isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
+  }, [
+    assistantLipSyncActive,
+    isListening,
+    isLoading,
+    isSpeaking,
+    isSpeechDetected,
+    messages,
+    resolveStatusMapping,
+    session.urgency
+  ]);
 
   const postChat = async (payload: {
     userInput?: string;
