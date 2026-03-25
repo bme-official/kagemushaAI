@@ -6,6 +6,7 @@ type RuntimeAvatarSettings = {
   companyName?: string;
   companyNameKana?: string;
   voiceModel?: string;
+  ttsApiVoice?: string;
   profile?: string;
   statuses?: string[];
   statusMappings?: Record<

@@ -232,13 +232,19 @@ export const ChatWindow = ({
         messages: [{ ...first, content: openingMessage }, ...prev.messages.slice(1)]
       };
     });
+    // 設定が反映された挨拶文を読み上げ直せるよう、進行中の TTS を中断してリセット
+    stopApiAudio();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    lastSpokenMessageIdRef.current = null;
     if (parsed.modelUrl) {
       setAvatarReady(false);
       setAvatarModelUrl(parsed.modelUrl);
     } else {
       setAvatarModelUrl(avatarRuntimeConfig.modelUrl);
     }
-  }, []);
+  }, [stopApiAudio]);
 
   const messages = useMemo(() => session.messages, [session.messages]);
   const displayMessages = useMemo(

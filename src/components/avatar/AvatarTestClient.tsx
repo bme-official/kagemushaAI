@@ -190,6 +190,7 @@ export const AvatarTestClient = () => {
         companyName?: string;
         companyNameKana?: string;
         voiceModel?: string;
+        ttsApiVoice?: string;
         profile?: string;
         services?: ServiceItem[];
         statuses?: string[];
@@ -424,33 +425,59 @@ export const AvatarTestClient = () => {
           />
         </div>
         <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 13, color: "#334155" }}>声（ブラウザTTS モデル選択）</label>
+          <label style={{ fontSize: 13, color: "#334155" }}>
+            声（ブラウザTTS / 日本語音声）
+            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>OS・ブラウザにインストール済みの音声を使用</span>
+          </label>
           <select
             value={voiceModel}
             onChange={(event) => setVoiceModel(event.target.value)}
             style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
           >
-            <option value="ja-JP-standard">ja-JP-standard</option>
-            <option value="ja-JP-soft">ja-JP-soft</option>
-            <option value="ja-JP-energetic">ja-JP-energetic</option>
+            <optgroup label="汎用（日本語）">
+              <option value="ja-jp">日本語デフォルト</option>
+            </optgroup>
+            <optgroup label="macOS / iOS">
+              <option value="kyoko">Kyoko（女性・標準）</option>
+              <option value="otoya">Otoya（男性・標準）</option>
+              <option value="hattori">Hattori（男性・Enhanced）</option>
+              <option value="o-ren">O-Ren（女性・Enhanced）</option>
+            </optgroup>
+            <optgroup label="Windows">
+              <option value="haruka">Microsoft Haruka（女性）</option>
+              <option value="ayumi">Microsoft Ayumi（女性）</option>
+              <option value="keita">Microsoft Keita（男性）</option>
+            </optgroup>
+            <optgroup label="Android / Chrome">
+              <option value="google 日本語">Google 日本語</option>
+            </optgroup>
           </select>
         </div>
         <div style={{ display: "grid", gap: 6 }}>
           <label style={{ fontSize: 13, color: "#334155" }}>
-            声（AIモデル選択 / OpenAI TTS）
-            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>ブラウザTTSが使えない場合に使用</span>
+            声（OpenAI TTS / 日本語対応）
+            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>ブラウザTTSが使えない場合・iOSで使用</span>
           </label>
           <select
             value={ttsApiVoice}
             onChange={(event) => setTtsApiVoice(event.target.value)}
             style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
           >
-            <option value="nova">nova（自然な女性）</option>
-            <option value="shimmer">shimmer（柔らかい女性）</option>
-            <option value="alloy">alloy（ニュートラル）</option>
-            <option value="echo">echo（男性的）</option>
-            <option value="onyx">onyx（低音男性）</option>
-            <option value="fable">fable（英国男性）</option>
+            <optgroup label="女性（日本語おすすめ）">
+              <option value="shimmer">shimmer（落ち着いた女性 ★日本語推奨）</option>
+              <option value="nova">nova（自然な女性）</option>
+              <option value="coral">coral（温かみのある女性）</option>
+            </optgroup>
+            <optgroup label="男性（日本語対応）">
+              <option value="echo">echo（男性）</option>
+              <option value="onyx">onyx（低音男性）</option>
+              <option value="ash">ash（落ち着いた男性）</option>
+            </optgroup>
+            <optgroup label="その他">
+              <option value="alloy">alloy（ニュートラル）</option>
+              <option value="sage">sage（穏やかな中性）</option>
+              <option value="fable">fable（英国アクセント）</option>
+            </optgroup>
           </select>
         </div>
         <div style={{ display: "grid", gap: 6 }}>
