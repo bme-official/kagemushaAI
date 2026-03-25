@@ -83,6 +83,18 @@ const normalizeAssistantText = (text: string, settings: RuntimeAvatarSettings) =
   return applyIdentityMention(next, settings);
 };
 
+/** TTS用: 表示名をよみがなに置換してTTSエンジンの発音を改善する */
+const normalizeTtsText = (text: string, settings: RuntimeAvatarSettings): string => {
+  let next = text;
+  if (settings.companyName && settings.companyNameKana) {
+    next = next.replaceAll(settings.companyName, settings.companyNameKana);
+  }
+  if (settings.avatarName && settings.avatarNameKana) {
+    next = next.replaceAll(settings.avatarName, settings.avatarNameKana);
+  }
+  return next;
+};
+
 type ChatWindowProps = {
   sourcePage?: string;
   enableVoice?: boolean;
@@ -426,7 +438,7 @@ export const ChatWindow = ({
       stopApiAudio();
       try {
         const apiVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
-        const ttsText = text.slice(0, 800);
+        const ttsText = normalizeTtsText(text, runtimeAvatarSettings).slice(0, 800);
 
         // 先行フェッチキャッシュがあれば再利用（postChatで先行開始済みのリクエスト）
         const prefetch = ttsPrefetchRef.current;
@@ -730,9 +742,12 @@ export const ChatWindow = ({
 
       // TTS先行フェッチ: Reactの再レンダーより前にTTS APIリクエストを開始して遅延を削減
       if (enableVoice && ttsEnabled && audioUnlocked && isEmbedVisible) {
-        const ttsText = (prefixedMessages[prefixedMessages.length - 1]?.role === "assistant"
-          ? prefixedMessages[prefixedMessages.length - 1].content
-          : "").slice(0, 800);
+        const ttsText = normalizeTtsText(
+          prefixedMessages[prefixedMessages.length - 1]?.role === "assistant"
+            ? prefixedMessages[prefixedMessages.length - 1].content
+            : "",
+          runtimeAvatarSettings
+        ).slice(0, 800);
         const ttsVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
         if (ttsText) {
           ttsPrefetchRef.current = {

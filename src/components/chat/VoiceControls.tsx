@@ -77,6 +77,13 @@ export const VoiceControls = ({
   const restartTimeoutRef = useRef<number | null>(null);
   const speechIdleTimeoutRef = useRef<number | null>(null);
 
+  // コールバック ref: recognition が古いクロージャを保持しても常に最新版を呼ぶ
+  // （再レンダーで session が更新された handleVoiceTranscript を確実に使用する）
+  const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange });
+  useEffect(() => {
+    callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange };
+  });
+
   const hasSpeechRecognition = useMemo(() => {
     if (typeof window === "undefined") return false;
     const speechWindow = window as SpeechWindow;
@@ -99,11 +106,11 @@ export const VoiceControls = ({
 
   const markSpeechDetected = () => {
     setIsSpeechDetected(true);
-    onSpeechDetectedChange?.(true);
+    callbacksRef.current.onSpeechDetectedChange?.(true);
     clearSpeechIdleTimer();
     speechIdleTimeoutRef.current = window.setTimeout(() => {
       setIsSpeechDetected(false);
-      onSpeechDetectedChange?.(false);
+      callbacksRef.current.onSpeechDetectedChange?.(false);
       speechIdleTimeoutRef.current = null;
     }, 400);
   };
@@ -111,11 +118,11 @@ export const VoiceControls = ({
   // 雑音と判定しないよう、実際の発話テキストが取得されてから親に通知する（TTSを止める）
   const confirmSpeechDetected = () => {
     setIsSpeechDetected(true);
-    onSpeechDetectedChange?.(true);
+    callbacksRef.current.onSpeechDetectedChange?.(true);
     clearSpeechIdleTimer();
     speechIdleTimeoutRef.current = window.setTimeout(() => {
       setIsSpeechDetected(false);
-      onSpeechDetectedChange?.(false);
+      callbacksRef.current.onSpeechDetectedChange?.(false);
       speechIdleTimeoutRef.current = null;
     }, 400);
   };
@@ -138,7 +145,7 @@ export const VoiceControls = ({
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
     recognition.onstart = () => {
-      onListeningChange?.(true);
+      callbacksRef.current.onListeningChange?.(true);
     };
     recognition.onspeechstart = () => {
       // onspeechstart は雑音でも発火するため、ローカルの視覚表示のみ更新
@@ -151,7 +158,7 @@ export const VoiceControls = ({
       clearSpeechIdleTimer();
       speechIdleTimeoutRef.current = window.setTimeout(() => {
         setIsSpeechDetected(false);
-        onSpeechDetectedChange?.(false);
+        callbacksRef.current.onSpeechDetectedChange?.(false);
         speechIdleTimeoutRef.current = null;
       }, 120);
     };
@@ -169,17 +176,17 @@ export const VoiceControls = ({
           // 暫定テキストあり = 実際の発話を確認 → TTS停止を親に通知
           confirmSpeechDetected();
         } else {
-          // 確定テキスト = 通常通り処理
+          // 確定テキスト = 常に最新の onTranscript を呼ぶ（stale closure を避けるため ref 経由）
           markSpeechDetected();
-          onTranscript(transcript);
+          callbacksRef.current.onTranscript(transcript);
         }
       }
     };
     recognition.onerror = (event) => {
       clearSpeechIdleTimer();
       setIsSpeechDetected(false);
-      onListeningChange?.(false);
-      onSpeechDetectedChange?.(false);
+      callbacksRef.current.onListeningChange?.(false);
+      callbacksRef.current.onSpeechDetectedChange?.(false);
       if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
         shouldKeepListeningRef.current = false;
         setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
@@ -188,8 +195,8 @@ export const VoiceControls = ({
     recognition.onend = () => {
       clearSpeechIdleTimer();
       setIsSpeechDetected(false);
-      onListeningChange?.(false);
-      onSpeechDetectedChange?.(false);
+      callbacksRef.current.onListeningChange?.(false);
+      callbacksRef.current.onSpeechDetectedChange?.(false);
       if (shouldKeepListeningRef.current && !disabled) {
         clearRestartTimer();
         restartTimeoutRef.current = window.setTimeout(() => {
