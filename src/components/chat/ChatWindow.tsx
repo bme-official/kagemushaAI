@@ -25,7 +25,8 @@ const createInitialSession = (): ChatSessionState => {
       id: crypto.randomUUID(),
       role: "assistant",
       kind: "text",
-      content: `${characterConfig.greeting} ${uiConfig.initialQuestion}`,
+      // デフォルト設定で自己紹介付き挨拶を生成（設定ロード後はopeningMessageOverrideで上書き）
+      content: `こんにちは、${companyConfig.name}のお問い合わせサポート担当${characterConfig.name}です。どのようなご相談でもお気軽にお聞かせください。`,
       createdAt: new Date().toISOString()
     }
   ];
@@ -192,7 +193,7 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   // API TTS 呼び出し番号: 非同期フェッチ中に新しい呼び出しが来たら旧呼び出しを中断する
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
@@ -500,6 +501,10 @@ export const ChatWindow = ({
     // 既に読み上げ済みとしてマーク（重複防止）
     lastSpokenMessageIdRef.current = latestAssistant.id;
 
+    // TTS API フェッチ前に即座に speaking 状態にして thinking→idle→speaking のギャップを防ぐ
+    setIsSpeaking(true);
+    pulseAssistantLipSync();
+
     speakWithFallback(latestAssistant.content, {
       onStart: () => {
         setIsSpeaking(true);
@@ -571,9 +576,11 @@ export const ChatWindow = ({
     };
   }, []);
 
-  // 新しいメッセージが追加されたら常に最下部へスクロール
+  // 新しいメッセージが追加されたら常に最下部へスクロール（scrollTopを直接制御して確実に動作させる）
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
   }, [displayMessages.length]);
 
   useEffect(() => {
@@ -899,8 +906,10 @@ export const ChatWindow = ({
           </div>
         ) : null}
         <div
+          ref={messagesContainerRef}
           style={{
             flex: 1,
+            minHeight: 0,
             overflowY: "auto",
             padding: 12,
             display: viewMode === "text" || !enableVoice ? "flex" : "none",
@@ -914,7 +923,6 @@ export const ChatWindow = ({
           {session.phase === "confirming" && session.summaryDraft ? (
             <ConversationSummary summary={session.summaryDraft} />
           ) : null}
-          <div ref={messagesEndRef} />
         </div>
       </div>
 
