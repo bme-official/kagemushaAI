@@ -591,15 +591,14 @@ export const ChatWindow = ({
             : "explaining"
           : "idle";
 
+    // 表示ラベルは4状態のみ（感情ステータスは非表示・内部適用のみ）
     const fallbackStatusLabel = isSpeechDetected
       ? "音声を聞き取り中..."
       : isSpeaking
         ? "回答を読み上げ中..."
         : isLoading
           ? "入力内容を整理中..."
-          : session.urgency === "high"
-            ? "優先度高めで確認中"
-            : "ご相談受付中";
+          : "ご相談受付中";
 
     const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"
@@ -633,7 +632,8 @@ export const ChatWindow = ({
       ? gestureOptionMap[resolved.mapping.gestureOptionIds[0]] ?? fallbackGesture
       : fallbackGesture;
     const resolvedPose = resolved?.mapping.poses.length ? resolved.mapping.poses[0] : fallbackPose;
-    const statusLabel = resolved?.status ?? fallbackStatusLabel;
+    // 感情ステータス名は非表示。ラベルは常に4状態（idle/listening/thinking/speaking）のみ
+    const statusLabel = fallbackStatusLabel;
     const lipSyncActive = !isSpeechDetected && assistantLipSyncActive;
     const nextBehavior: AvatarBehaviorState = {
       pose: resolvedPose,

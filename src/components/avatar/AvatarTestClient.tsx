@@ -599,6 +599,12 @@ export const AvatarTestClient = () => {
         現在のURL: {activeUrl || "未設定"}
       </div>
       <div style={{ display: "grid", gap: 8, maxWidth: 860 }}>
+        <div style={{ fontSize: 13, color: "#334155", fontWeight: 600 }}>
+          感情ステータス別アバター挙動設定
+          <span style={{ fontSize: 11, color: "#64748b", marginLeft: 8, fontWeight: 400 }}>
+            ※会話内容に応じて内部的に適用（ユーザーには「受付中 / 聞き取り中 / 考え中 / 読み上げ中」の4状態のみ表示）
+          </span>
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {statuses.map((status) => (
             <button
