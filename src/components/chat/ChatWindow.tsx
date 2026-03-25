@@ -214,9 +214,14 @@ export const ChatWindow = ({
   // runtimeAvatarSettings を常に最新値で参照するための ref（speakViaTtsApi クロージャ内でよみがな置換に使用）
   const runtimeAvatarSettingsRef = useRef(runtimeAvatarSettings);
   useEffect(() => { runtimeAvatarSettingsRef.current = runtimeAvatarSettings; }, [runtimeAvatarSettings]);
-  // avatarModelUrl が変わるたびにロード中フラグを立てる
+  // avatarModelUrl が変わるたびにロード中フラグを立てる。
+  // VRM ロードが失敗しても onModelReady が呼ばれない場合のために
+  // 最大 15 秒でフォールバックして loading... を解除する。
   useEffect(() => {
-    if (canRenderVrm) setAvatarLoading(true);
+    if (!canRenderVrm) return;
+    setAvatarLoading(true);
+    const fallbackTimer = window.setTimeout(() => setAvatarLoading(false), 8000);
+    return () => window.clearTimeout(fallbackTimer);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [avatarModelUrl]);
 
@@ -977,6 +982,7 @@ export const ChatWindow = ({
                   modelUrl={avatarModelUrl}
                   behavior={avatarBehavior}
                   onModelReady={() => setAvatarLoading(false)}
+                  onError={() => setAvatarLoading(false)}
                 />
               ) : (
                 <div

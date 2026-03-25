@@ -10,12 +10,15 @@ type VRMCanvasProps = {
   modelUrl: string;
   behavior: AvatarBehaviorState;
   onModelReady?: () => void;
+  /** VRMロード失敗時のコールバック（ChatWindow の avatarLoading 解除に使用） */
+  onError?: () => void;
 };
 
-export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) => {
+export const VRMCanvas = ({ modelUrl, behavior, onModelReady, onError }: VRMCanvasProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const behaviorRef = useRef<AvatarBehaviorState>(behavior);
   const onModelReadyRef = useRef<typeof onModelReady>(onModelReady);
+  const onErrorRef = useRef<typeof onError>(onError);
   const currentVrmRef = useRef<VRM | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModelLoading, setIsModelLoading] = useState(true);
@@ -27,6 +30,10 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
   useEffect(() => {
     onModelReadyRef.current = onModelReady;
   }, [onModelReady]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -312,6 +319,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       if (!buffer) {
         setIsModelLoading(false);
         setError("VRMモデルの読み込みに失敗しました。");
+        onErrorRef.current?.();
         return;
       }
       const blob = new Blob([buffer], { type: "model/gltf-binary" });
@@ -339,6 +347,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           if (!cancelled) {
             setIsModelLoading(false);
             setError("VRMモデルの読み込みに失敗しました。");
+            // エラー時も ChatWindow の avatarLoading を解除する
+            onErrorRef.current?.();
           }
         }
       );

@@ -83,7 +83,12 @@ const callOpenAI = async (
   if (!content) return null;
 
   try {
-    return JSON.parse(content) as ChatAgentResult;
+    // GPT がマークダウンコードブロック（```json ... ```）で返す場合に備えて除去する
+    const stripped = content
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+    return JSON.parse(stripped) as ChatAgentResult;
   } catch {
     return null;
   }
