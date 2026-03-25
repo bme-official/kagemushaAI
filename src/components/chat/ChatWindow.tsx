@@ -194,6 +194,7 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   // API TTS 呼び出し番号: 非同期フェッチ中に新しい呼び出しが来たら旧呼び出しを中断する
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
@@ -572,6 +573,11 @@ export const ChatWindow = ({
     };
   }, []);
 
+  // 新しいメッセージが追加されたら常に最下部へスクロール
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [displayMessages.length]);
+
   useEffect(() => {
     const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
     const fallbackExpression = detectExpression(latestAssistantMessage, session.urgency);
@@ -745,6 +751,20 @@ export const ChatWindow = ({
       return;
     }
     if (nextFieldRequest) {
+      // フィールド入力は楽観的に表示してから送信
+      setSession((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            id: crypto.randomUUID(),
+            role: "user" as const,
+            kind: "text" as const,
+            content: text,
+            createdAt: new Date().toISOString()
+          }
+        ]
+      }));
       await postChat({
         fieldResponse: {
           fieldName: nextFieldRequest.fieldName,
@@ -753,6 +773,20 @@ export const ChatWindow = ({
       });
       return;
     }
+    // ユーザーメッセージを楽観的に表示（サーバー応答前に即座に反映）
+    setSession((prev) => ({
+      ...prev,
+      messages: [
+        ...prev.messages,
+        {
+          id: crypto.randomUUID(),
+          role: "user" as const,
+          kind: "text" as const,
+          content: text,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    }));
     await postChat({ userInput: text });
   };
 
@@ -905,6 +939,7 @@ export const ChatWindow = ({
           {session.phase === "confirming" && session.summaryDraft ? (
             <ConversationSummary summary={session.summaryDraft} />
           ) : null}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
