@@ -1019,9 +1019,7 @@ export const ChatWindow = ({
                 left: 12,
                 right: 12,
                 bottom: 74,
-                zIndex: 21,
-                borderRadius: 10,
-                overflow: "hidden"
+                zIndex: 21
               }}
             >
               {nextFieldRequest.fieldName === "confirmSubmit" ? (
@@ -1035,6 +1033,7 @@ export const ChatWindow = ({
                 <StructuredFieldPrompt
                   request={nextFieldRequest}
                   onSubmit={handleFieldSend}
+                  onSkip={!nextFieldRequest.required ? () => handleFieldSend("") : undefined}
                   disabled={isLoading}
                 />
               )}

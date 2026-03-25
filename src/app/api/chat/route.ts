@@ -220,9 +220,11 @@ export async function POST(request: NextRequest) {
 
   // AI が inferredIntent を確定した後に shouldCollectContact を再評価する。
   // ユーザーが「送信」などを言わなくても、相談内容と意図が揃えば連絡先収集を開始する。
+  // また AI が nextFieldRequest を返している場合も収集フェーズと判断する（短い発話でも対応）。
   const finalShouldCollectContact =
     shouldCollectContact ||
-    Boolean(workingSession.collectedFields.inquiryBody && workingSession.inferredIntent);
+    Boolean(workingSession.collectedFields.inquiryBody && workingSession.inferredIntent) ||
+    Boolean(workingSession.collectedFields.inquiryBody && aiResult?.nextFieldRequest);
 
   const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {
     inferredIntent: workingSession.inferredIntent,

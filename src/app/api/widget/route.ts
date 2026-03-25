@@ -46,7 +46,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
     .kagemusha-chat-close { border:none; background:transparent; cursor:pointer; font-size:20px; line-height:1; color:#475569; }
     .kagemusha-chat-iframe { width:100%; flex:1 1 auto; min-height:0; border:none; display:block; }
     @media (max-width: 640px) {
-      .kagemusha-chat-modal { inset: 0; width:100vw; height:100vh; border-radius:0; right:0; bottom:0; }
+      .kagemusha-chat-modal { inset: 0; width:100svw; height:100svh; border-radius:0; right:0; bottom:0; }
       .kagemusha-chat-btn { right: 12px; bottom: 12px; }
     }
   \`;
