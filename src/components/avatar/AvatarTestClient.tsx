@@ -481,6 +481,7 @@ export const AvatarTestClient = () => {
                 <option value="el:ErXwobaYiN019PkySvjV">Antoni — 男性・自信</option>
                 <option value="el:TxGEqnHWrfWFTfGW9XjX">Josh — 男性・若め</option>
                 <option value="el:yoZ06aMxZJJ28mfd3POQ">Sam — 男性・エネルギー</option>
+                <option value="el:JBFqnCBsd6RMkjVDRZzb">George — 男性・深み</option>
               </optgroup>
               <optgroup label="ElevenLabs — ボイスライブラリ（有料プラン必須）">
                 <option value="el:3JDquces8E8bkmvbh6Bc">おすすめ日本語ボイス（要Starter以上）</option>
