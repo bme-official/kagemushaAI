@@ -102,6 +102,7 @@ export const ChatWindow = ({
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
+  const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
     pose: "neutral",
     gesture: "idle",
@@ -137,6 +138,20 @@ export const ChatWindow = ({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { avatarName?: string };
+      if (parsed.avatarName) {
+        setAvatarNameDisplay(parsed.avatarName);
+      }
+    } catch {
+      // ignore local storage parse error
+    }
   }, []);
 
   useEffect(() => {
@@ -327,7 +342,7 @@ export const ChatWindow = ({
             ? "優先度高めで確認中"
             : "ご相談受付中";
 
-    const lipSyncActive = isSpeechDetected || assistantLipSyncActive;
+    const lipSyncActive = assistantLipSyncActive;
     const pose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"
       : isSpeaking
@@ -470,7 +485,7 @@ export const ChatWindow = ({
       >
         <AvatarShell />
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-          <strong style={{ fontSize: 14 }}>{characterConfig.name}</strong>
+          <strong style={{ fontSize: 14 }}>{avatarNameDisplay}</strong>
           <AvatarStatus statusLabel={avatarBehavior.statusLabel} />
         </div>
       </div>
@@ -617,7 +632,17 @@ export const ChatWindow = ({
             ) : null
           ) : null}
           {(viewMode === "text" || !enableVoice) && !isLoading ? (
-            <ChatInput onSend={handleMessageSend} disabled={isLoading} />
+            <ChatInput
+              onSend={handleMessageSend}
+              disabled={isLoading}
+              placeholder={
+                nextFieldRequest?.fieldName === "confirmSubmit"
+                  ? "送信する場合は「はい」、修正する場合は「いいえ」と入力"
+                  : nextFieldRequest
+                    ? `【${nextFieldRequest.label}】を入力してください`
+                    : "例) WEB制作の見積もりを相談したいです"
+              }
+            />
           ) : null}
         </>
       )}

@@ -5,6 +5,7 @@ export const getNextFieldRequest = (
   collected: CollectedContactFields,
   context?: {
     inferredIntent?: string | null;
+    shouldCollectContact?: boolean;
   }
 ): StructuredFieldRequest | null => {
   // 会話文脈のない必須情報の押し付けを避けるため、
@@ -24,7 +25,9 @@ export const getNextFieldRequest = (
   }
 
   // 問い合わせ本文が揃ってから、送信に必要な必須項目のみ収集する。
-  const canAskIdentityFields = Boolean(collected.inquiryBody && context?.inferredIntent);
+  const canAskIdentityFields = Boolean(
+    collected.inquiryBody && context?.inferredIntent && context?.shouldCollectContact
+  );
   for (const field of inquiryConfig.fieldCollection) {
     const value = collected[field.fieldName];
     if (

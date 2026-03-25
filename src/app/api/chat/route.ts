@@ -141,6 +141,9 @@ export async function POST(request: NextRequest) {
   }
 
   const latestText = body.userInput || body.fieldResponse?.value || "";
+  const shouldCollectContact =
+    workingSession.phase === "confirming" ||
+    /送信|保存|この内容|以上|確定|お願いします|提出/.test(latestText);
   const resultFromRule = classifyInquiry({ userText: latestText });
   workingSession.inferredIntent = workingSession.inferredIntent ?? resultFromRule.inferredIntent;
   workingSession.inferredCategory =
@@ -161,13 +164,14 @@ export async function POST(request: NextRequest) {
   }
 
   const nextFieldRequest = getNextFieldRequest(workingSession.collectedFields, {
-    inferredIntent: workingSession.inferredIntent
+    inferredIntent: workingSession.inferredIntent,
+    shouldCollectContact
   });
   const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
     Boolean(workingSession.collectedFields[field])
   );
 
-  if (!nextFieldRequest && hasRequired) {
+  if (!nextFieldRequest && hasRequired && shouldCollectContact) {
     workingSession.phase = "confirming";
     workingSession.summaryDraft = summarizeInquiry(workingSession);
   } else {

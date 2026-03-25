@@ -51,9 +51,9 @@ const poseOptions: Array<{ value: AvatarPoseState; label: string }> = [
 const defaultStatuses = ["嬉しい", "悲しい", "説明中", "考え中", "安心", "緊張"];
 
 type StatusMapping = {
-  expressions: AvatarExpressionState[];
+  expressionOptionIds: string[];
   poses: AvatarPoseState[];
-  gestures: AvatarGestureState[];
+  gestureOptionIds: string[];
 };
 
 type ServiceItem = {
@@ -93,16 +93,16 @@ export const AvatarTestClient = () => {
     }
   ]);
   const [statusMappings, setStatusMappings] = useState<Record<string, StatusMapping>>({
-    嬉しい: { expressions: ["smile"], poses: ["friendly"], gestures: ["explaining"] },
-    悲しい: { expressions: ["serious"], poses: ["leanForward"], gestures: ["idle"] },
+    嬉しい: { expressionOptionIds: ["smile_happy"], poses: ["friendly"], gestureOptionIds: ["explain_general"] },
+    悲しい: { expressionOptionIds: ["serious_sad"], poses: ["leanForward"], gestureOptionIds: ["idle_wait"] },
     説明中: {
-      expressions: ["neutral", "smile"],
+      expressionOptionIds: ["neutral_default", "smile_happy"],
       poses: ["upright", "confident"],
-      gestures: ["explaining", "emphasis"]
+      gestureOptionIds: ["explain_general", "emphasis_point"]
     },
-    考え中: { expressions: ["thinking"], poses: ["upright"], gestures: ["thinking"] },
-    安心: { expressions: ["smile"], poses: ["neutral"], gestures: ["listening"] },
-    緊張: { expressions: ["serious"], poses: ["upright"], gestures: ["listening"] }
+    考え中: { expressionOptionIds: ["thinking_deep"], poses: ["upright"], gestureOptionIds: ["thinking_pose"] },
+    安心: { expressionOptionIds: ["smile_relief"], poses: ["neutral"], gestureOptionIds: ["listening_empathy"] },
+    緊張: { expressionOptionIds: ["serious_focus"], poses: ["upright"], gestureOptionIds: ["listening_default"] }
   });
   const [voiceState, setVoiceState] = useState<AvatarVoiceState>("muted");
   const [previewBehavior, setPreviewBehavior] = useState<AvatarBehaviorState>(idleBehavior);
@@ -144,28 +144,32 @@ export const AvatarTestClient = () => {
   };
 
   const currentMapping = statusMappings[activeStatus] ?? {
-    expressions: ["neutral"],
+    expressionOptionIds: ["neutral_default"],
     poses: ["neutral"],
-    gestures: ["idle"]
+    gestureOptionIds: ["idle_wait"]
   };
 
-  const toggleExpression = (expression: AvatarExpressionState) => {
+  const toggleExpression = (expressionOptionId: string) => {
     setStatusMappings((prev) => {
-      const current = prev[activeStatus] ?? { expressions: [], poses: [], gestures: [] };
-      const exists = current.expressions.includes(expression);
-      const expressions = exists
-        ? current.expressions.filter((item) => item !== expression)
-        : [...current.expressions, expression];
+      const current = prev[activeStatus] ?? { expressionOptionIds: [], poses: [], gestureOptionIds: [] };
+      const exists = current.expressionOptionIds.includes(expressionOptionId);
+      const expressionOptionIds = exists
+        ? current.expressionOptionIds.filter((item) => item !== expressionOptionId)
+        : [...current.expressionOptionIds, expressionOptionId];
       return {
         ...prev,
-        [activeStatus]: { ...current, expressions }
+        [activeStatus]: { ...current, expressionOptionIds }
       };
     });
   };
 
   const togglePose = (pose: AvatarPoseState) => {
     setStatusMappings((prev) => {
-      const current = prev[activeStatus] ?? { expressions: [], poses: [], gestures: [] };
+      const current = prev[activeStatus] ?? {
+        expressionOptionIds: [],
+        poses: [],
+        gestureOptionIds: []
+      };
       const exists = current.poses.includes(pose);
       const poses = exists ? current.poses.filter((item) => item !== pose) : [...current.poses, pose];
       return {
@@ -175,29 +179,41 @@ export const AvatarTestClient = () => {
     });
   };
 
-  const toggleGesture = (gesture: AvatarGestureState) => {
+  const toggleGesture = (gestureOptionId: string) => {
     setStatusMappings((prev) => {
-      const current = prev[activeStatus] ?? { expressions: [], poses: [], gestures: [] };
-      const exists = current.gestures.includes(gesture);
-      const gestures = exists
-        ? current.gestures.filter((item) => item !== gesture)
-        : [...current.gestures, gesture];
+      const current = prev[activeStatus] ?? {
+        expressionOptionIds: [],
+        poses: [],
+        gestureOptionIds: []
+      };
+      const exists = current.gestureOptionIds.includes(gestureOptionId);
+      const gestureOptionIds = exists
+        ? current.gestureOptionIds.filter((item) => item !== gestureOptionId)
+        : [...current.gestureOptionIds, gestureOptionId];
       return {
         ...prev,
-        [activeStatus]: { ...current, gestures }
+        [activeStatus]: { ...current, gestureOptionIds }
       };
     });
   };
 
   const applyStatusPreview = (status: string) => {
     const mapping = statusMappings[status] ?? {
-      expressions: ["neutral"],
+      expressionOptionIds: ["neutral_default"],
       poses: ["neutral"],
-      gestures: ["idle"]
+      gestureOptionIds: ["idle_wait"]
     };
-    const expression = pickRandom(mapping.expressions, "neutral");
+    const expressionOption = pickRandom(
+      expressionOptions.filter((item) => mapping.expressionOptionIds.includes(item.id)),
+      expressionOptions[0]
+    );
+    const gestureOption = pickRandom(
+      gestureOptions.filter((item) => mapping.gestureOptionIds.includes(item.id)),
+      gestureOptions[0]
+    );
+    const expression = expressionOption.value;
     const pose = pickRandom(mapping.poses, "neutral");
-    const gesture = pickRandom(mapping.gestures, "idle");
+    const gesture = gestureOption.value;
     setPreviewBehavior({
       pose,
       gesture,
@@ -214,7 +230,11 @@ export const AvatarTestClient = () => {
     setStatuses((prev) => [...prev, next]);
     setStatusMappings((prev) => ({
       ...prev,
-      [next]: { expressions: ["neutral"], poses: ["neutral"], gestures: ["idle"] }
+      [next]: {
+        expressionOptionIds: ["neutral_default"],
+        poses: ["neutral"],
+        gestureOptionIds: ["idle_wait"]
+      }
     }));
     setActiveStatus(next);
     setNewStatusName("");
@@ -418,8 +438,8 @@ export const AvatarTestClient = () => {
               <label key={option.id} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                 <input
                   type="checkbox"
-                  checked={currentMapping.expressions.includes(option.value)}
-                  onChange={() => toggleExpression(option.value)}
+                  checked={currentMapping.expressionOptionIds.includes(option.id)}
+                  onChange={() => toggleExpression(option.id)}
                 />
                 {option.label}
               </label>
@@ -448,8 +468,8 @@ export const AvatarTestClient = () => {
               <label key={option.id} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
                 <input
                   type="checkbox"
-                  checked={currentMapping.gestures.includes(option.value)}
-                  onChange={() => toggleGesture(option.value)}
+                  checked={currentMapping.gestureOptionIds.includes(option.id)}
+                  onChange={() => toggleGesture(option.id)}
                 />
                 {option.label}
               </label>
