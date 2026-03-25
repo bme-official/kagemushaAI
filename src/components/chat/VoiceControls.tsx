@@ -199,7 +199,7 @@ export const VoiceControls = ({
       <div
         style={{
           display: "inline-flex",
-          alignItems: "flex-end",
+          alignItems: "center",
           gap: 4,
           minWidth: 28,
           height: 20

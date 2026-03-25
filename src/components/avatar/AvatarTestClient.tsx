@@ -9,6 +9,7 @@ const idleBehavior: AvatarBehaviorState = {
   gesture: "idle",
   voice: "muted",
   expression: "neutral",
+  lipSyncActive: false,
   statusLabel: "テスト表示中"
 };
 

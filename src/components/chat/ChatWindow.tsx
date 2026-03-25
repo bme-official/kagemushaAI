@@ -98,6 +98,7 @@ export const ChatWindow = ({
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [micEnabled, setMicEnabled] = useState(enableVoice && voiceConfig.enabled && voiceConfig.sttEnabled);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || !enableVoice);
   const [avatarReady, setAvatarReady] = useState(false);
@@ -105,10 +106,12 @@ export const ChatWindow = ({
     gesture: "idle",
     voice: "muted",
     expression: "neutral",
+    lipSyncActive: false,
     statusLabel: "ご相談受付中"
   });
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const hasSpokenOpeningRef = useRef(false);
+  const assistantLipSyncTimerRef = useRef<number | null>(null);
 
   const messages = useMemo(() => session.messages, [session.messages]);
   const latestAssistant = useMemo(
@@ -136,10 +139,22 @@ export const ChatWindow = ({
     if (isEmbedVisible) return;
     setIsSpeaking(false);
     setIsSpeechDetected(false);
+    setAssistantLipSyncActive(false);
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
   }, [isEmbedVisible]);
+
+  const pulseAssistantLipSync = useCallback(() => {
+    setAssistantLipSyncActive(true);
+    if (assistantLipSyncTimerRef.current !== null) {
+      window.clearTimeout(assistantLipSyncTimerRef.current);
+    }
+    assistantLipSyncTimerRef.current = window.setTimeout(() => {
+      setAssistantLipSyncActive(false);
+      assistantLipSyncTimerRef.current = null;
+    }, 140);
+  }, []);
 
   const trySpeakOpeningGreeting = useCallback(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
@@ -156,12 +171,20 @@ export const ChatWindow = ({
     utterance.pitch = voiceConfig.speechPitch;
     utterance.onstart = () => {
       setIsSpeaking(true);
+      pulseAssistantLipSync();
       hasSpokenOpeningRef.current = true;
     };
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onboundary = () => pulseAssistantLipSync();
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+    };
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, avatarReady, enableVoice, isEmbedVisible, latestAssistant, ttsEnabled]);
+  }, [audioUnlocked, avatarReady, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
 
   const unlockAudio = () => {
     if (!audioUnlocked) {
@@ -186,11 +209,21 @@ export const ChatWindow = ({
     utterance.lang = voiceConfig.locale;
     utterance.rate = voiceConfig.speechRate;
     utterance.pitch = voiceConfig.speechPitch;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onstart = () => {
+      setIsSpeaking(true);
+      pulseAssistantLipSync();
+    };
+    utterance.onboundary = () => pulseAssistantLipSync();
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+    };
     window.speechSynthesis.speak(utterance);
-  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, ttsEnabled]);
+  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
@@ -204,11 +237,20 @@ export const ChatWindow = ({
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
       setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
     }
   }, [enableVoice, ttsEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (assistantLipSyncTimerRef.current !== null) {
+        window.clearTimeout(assistantLipSyncTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
@@ -239,9 +281,10 @@ export const ChatWindow = ({
             ? "優先度高めで確認中"
             : "ご相談受付中";
 
-    const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, statusLabel };
+    const lipSyncActive = isSpeechDetected || assistantLipSyncActive;
+    const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, lipSyncActive, statusLabel };
     setAvatarBehavior(nextBehavior);
-  }, [isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
+  }, [assistantLipSyncActive, isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
 
   const postChat = async (payload: {
     userInput?: string;

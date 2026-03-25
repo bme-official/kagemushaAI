@@ -100,17 +100,17 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           break;
       }
 
-      if (nextBehavior.voice === "speaking" || nextBehavior.voice === "listening") {
-        const speed = nextBehavior.voice === "speaking" ? 14 : 10;
-        const base = nextBehavior.voice === "speaking" ? 0.12 : 0.08;
-        const amp = nextBehavior.voice === "speaking" ? 0.15 : 0.1;
+      if (nextBehavior.lipSyncActive) {
+        const speed = nextBehavior.voice === "speaking" ? 16 : 11;
+        const base = nextBehavior.voice === "speaking" ? 0.1 : 0.06;
+        const amp = nextBehavior.voice === "speaking" ? 0.17 : 0.11;
         const mouth = base + (Math.sin(elapsedSec * speed) + 1) * amp;
         expressionManager.setValue("aa", mouth);
         expressionManager.setValue("ih", mouth * 0.45);
         expressionManager.setValue("ou", mouth * 0.4);
-        if (nextBehavior.voice === "listening") {
-          expressionManager.setValue("relaxed", 0.2);
-        }
+      }
+      if (nextBehavior.voice === "listening") {
+        expressionManager.setValue("relaxed", 0.2);
       }
     };
 
@@ -125,8 +125,15 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       const rightUpperArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
       const leftLowerArm = vrm.humanoid.getNormalizedBoneNode("leftLowerArm");
       const rightLowerArm = vrm.humanoid.getNormalizedBoneNode("rightLowerArm");
+      const leftHand = vrm.humanoid.getNormalizedBoneNode("leftHand");
+      const rightHand = vrm.humanoid.getNormalizedBoneNode("rightHand");
+      const leftIndex = vrm.humanoid.getNormalizedBoneNode("leftIndexProximal");
+      const rightIndex = vrm.humanoid.getNormalizedBoneNode("rightIndexProximal");
+      const leftMiddle = vrm.humanoid.getNormalizedBoneNode("leftMiddleProximal");
+      const rightMiddle = vrm.humanoid.getNormalizedBoneNode("rightMiddleProximal");
       const nextBehavior = behaviorRef.current;
       const idleSwing = Math.sin(elapsedSec * 1.4) * 0.02;
+      const handWave = Math.sin(elapsedSec * 2.1) * 0.06;
 
       applyBoneRotation(head, { x: idleSwing * 0.4, y: idleSwing * 0.35, z: 0 });
       applyBoneRotation(neck, { x: 0, y: idleSwing * 0.25, z: 0 });
@@ -138,6 +145,12 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       applyBoneRotation(rightUpperArm, { x: -0.1, z: 1.05 });
       applyBoneRotation(leftLowerArm, { z: -0.16 });
       applyBoneRotation(rightLowerArm, { z: 0.16 });
+      applyBoneRotation(leftHand, { x: 0.05, y: handWave * 0.3, z: -0.08 });
+      applyBoneRotation(rightHand, { x: 0.05, y: -handWave * 0.3, z: 0.08 });
+      applyBoneRotation(leftIndex, { x: 0.1 + handWave * 0.2 });
+      applyBoneRotation(rightIndex, { x: 0.1 - handWave * 0.2 });
+      applyBoneRotation(leftMiddle, { x: 0.08 + handWave * 0.15 });
+      applyBoneRotation(rightMiddle, { x: 0.08 - handWave * 0.15 });
 
       switch (nextBehavior.gesture) {
         case "thinking":
@@ -157,6 +170,10 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(rightUpperArm, { x: -0.12, z: 0.78 });
           applyBoneRotation(leftLowerArm, { z: -0.28 });
           applyBoneRotation(rightLowerArm, { z: 0.28 });
+          applyBoneRotation(leftHand, { y: 0.14, z: -0.2 });
+          applyBoneRotation(rightHand, { y: -0.14, z: 0.2 });
+          applyBoneRotation(leftIndex, { x: -0.15 });
+          applyBoneRotation(rightIndex, { x: -0.15 });
           break;
         case "emphasis":
           applyBoneRotation(head, { x: -0.03, y: 0.06 });
@@ -165,6 +182,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(rightUpperArm, { x: -0.15, z: 0.7 });
           applyBoneRotation(leftLowerArm, { z: -0.35 });
           applyBoneRotation(rightLowerArm, { z: 0.35 });
+          applyBoneRotation(leftHand, { x: 0.12, y: 0.18, z: -0.25 });
+          applyBoneRotation(rightHand, { x: 0.12, y: -0.18, z: 0.25 });
           break;
         default:
           break;

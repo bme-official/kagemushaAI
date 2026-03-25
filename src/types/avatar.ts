@@ -8,5 +8,6 @@ export type AvatarBehaviorState = {
   gesture: AvatarGestureState;
   voice: AvatarVoiceState;
   expression: AvatarExpressionState;
+  lipSyncActive: boolean;
   statusLabel: string;
 };
