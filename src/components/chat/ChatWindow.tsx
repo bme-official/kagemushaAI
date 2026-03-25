@@ -178,6 +178,7 @@ export const ChatWindow = ({
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
+  const [openingMessageOverride, setOpeningMessageOverride] = useState<string | null>(null);
   const [avatarReady, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
@@ -197,6 +198,8 @@ export const ChatWindow = ({
   const ttsGenerationRef = useRef(0);
   // API TTS 呼び出し番号: 非同期フェッチ中に新しい呼び出しが来たら旧呼び出しを中断する
   const apiCallCounterRef = useRef(0);
+  // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
+  const conversationStartedRef = useRef(false);
 
   const stopApiAudio = useCallback(() => {
     const a = apiAudioRef.current;
@@ -222,22 +225,17 @@ export const ChatWindow = ({
     const primaryService = parsed.services?.find((s) => s.name)?.name;
     const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
     const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当${runtimeName}です。${serviceSuffix}どのようなご相談でもお気軽にお聞かせください。`;
-    setSession((prev) => {
-      if (!prev.messages.length) return prev;
-      const first = prev.messages[0];
-      if (first.role !== "assistant") return prev;
-      if (prev.phase !== "collecting") return prev;
-      return {
-        ...prev,
-        messages: [{ ...first, content: openingMessage }, ...prev.messages.slice(1)]
-      };
-    });
-    // 設定が反映された挨拶文を読み上げ直せるよう、進行中の TTS を中断してリセット
-    stopApiAudio();
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    // session.messages を変更せず表示用オーバーライドとして挨拶文を保持する
+    // → session は postChat の setSession 上書きに左右されず履歴が変わらなくなる
+    setOpeningMessageOverride(openingMessage);
+    // 会話開始前のみ TTS をリセットして更新後の挨拶文を読み上げ直す
+    if (!conversationStartedRef.current) {
+      stopApiAudio();
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
+        window.speechSynthesis.cancel();
+      }
+      lastSpokenMessageIdRef.current = null;
     }
-    lastSpokenMessageIdRef.current = null;
     if (parsed.modelUrl) {
       setAvatarReady(false);
       setAvatarModelUrl(parsed.modelUrl);
@@ -249,12 +247,16 @@ export const ChatWindow = ({
   const messages = useMemo(() => session.messages, [session.messages]);
   const displayMessages = useMemo(
     () =>
-      messages.map((message) =>
-        message.role === "assistant"
-          ? { ...message, content: normalizeAssistantText(message.content, runtimeAvatarSettings) }
-          : message
-      ),
-    [messages, runtimeAvatarSettings]
+      messages.map((message, index) => {
+        if (message.role !== "assistant") return message;
+        // 最初のアシスタントメッセージは設定由来の挨拶文オーバーライドを使用する
+        // session.messages は変更せず表示層だけで上書きするため履歴が変わらない
+        const baseContent = (index === 0 && openingMessageOverride)
+          ? openingMessageOverride
+          : message.content;
+        return { ...message, content: normalizeAssistantText(baseContent, runtimeAvatarSettings) };
+      }),
+    [messages, runtimeAvatarSettings, openingMessageOverride]
   );
   const latestAssistant = useMemo(
     () => [...displayMessages].reverse().find((msg) => msg.role === "assistant"),
@@ -839,6 +841,7 @@ export const ChatWindow = ({
 
   const handleMessageSend = async (text: string) => {
     if (isLoading) return;
+    conversationStartedRef.current = true;
     if (nextFieldRequest?.fieldName === "confirmSubmit") {
       const normalized = text.trim().toLowerCase();
       const confirmed = /^(yes|y|はい|送信|ok|お願いします)$/.test(normalized) ? "yes" : "no";

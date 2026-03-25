@@ -52,6 +52,14 @@ export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings)
       });
   }
 
+  // 設定済みサービス一覧があればそれを優先。なければデフォルトの事業カテゴリを使う
+  const configuredServices = runtimeAvatarSettings?.services?.filter((s) => s.name) ?? [];
+  const serviceLines = configuredServices.length
+    ? configuredServices.map((s) =>
+        `  - ${s.name}${s.ruby ? `（${s.ruby}）` : ""}${s.description ? `: ${s.description}` : ""}`
+      ).join("\n")
+    : companyConfig.businessCategories.map((c) => `  - ${c}`).join("\n");
+
   return `
 あなたは${runtimeCompanyName}の問い合わせサポートキャラクター「${runtimeName}」です。
 役割: ${characterConfig.role.replace(companyConfig.name, runtimeCompanyName)}
@@ -67,8 +75,9 @@ ${characterConfig.forbiddenStyle.map((s) => `- ${s}`).join("\n")}
 
 企業情報:
 - 会社名: ${runtimeCompanyName}
-- 説明: ${companyConfig.description}
-- 事業カテゴリ: ${companyConfig.businessCategories.join(", ")}
+- 説明: ${runtimeAvatarSettings?.profile || companyConfig.description}
+- 提供サービス・事業（ユーザーから聞かれた場合は以下の内容をもとに案内する）:
+${serviceLines}
 
 アバター設定(ユーザー編集内容):
 ${runtimeLines.length ? runtimeLines.join("\n") : "- 未設定(デフォルト設定で応答)"}
@@ -83,6 +92,7 @@ ${inquiryConfig.inquiryIntents.map((intent) => `- ${intent}`).join("\n")}
 - 個人情報は必要最小限のみ確認する
 - 最後に要約と送信確認を行う
 - 初回の挨拶と最初の数回の返答では、可能な範囲で会社名・担当名・主要サービス名を自然に含める
+- サービスや事業内容について聞かれた場合は「提供サービス・事業」に記載された内容のみを案内する
 
 必ず次のJSON形式のみで返してください:
 {
