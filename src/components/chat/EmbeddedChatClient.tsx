@@ -4,9 +4,13 @@ import { ChatWindow } from "@/components/chat/ChatWindow";
 
 type EmbeddedChatClientProps = {
   sourcePage: string;
+  autoUnlockAudio?: boolean;
 };
 
-export const EmbeddedChatClient = ({ sourcePage }: EmbeddedChatClientProps) => {
+export const EmbeddedChatClient = ({
+  sourcePage,
+  autoUnlockAudio = false
+}: EmbeddedChatClientProps) => {
   return (
     <main
       style={{
@@ -16,7 +20,7 @@ export const EmbeddedChatClient = ({ sourcePage }: EmbeddedChatClientProps) => {
         background: "#fff"
       }}
     >
-      <ChatWindow sourcePage={sourcePage} enableVoice />
+      <ChatWindow sourcePage={sourcePage} enableVoice initialAudioUnlocked={autoUnlockAudio} />
     </main>
   );
 };

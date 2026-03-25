@@ -28,9 +28,9 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#f8fafc");
 
-    const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 1000);
-    camera.position.set(0, 1.45, 1.35);
-    camera.lookAt(0, 1.35, 0);
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 1000);
+    camera.position.set(0, 1.38, 1.15);
+    camera.lookAt(0, 1.3, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -105,21 +105,33 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
       const head = vrm.humanoid.getNormalizedBoneNode("head");
       const neck = vrm.humanoid.getNormalizedBoneNode("neck");
       const spine = vrm.humanoid.getNormalizedBoneNode("spine");
+      const upperChest = vrm.humanoid.getNormalizedBoneNode("upperChest");
+      const leftShoulder = vrm.humanoid.getNormalizedBoneNode("leftShoulder");
+      const rightShoulder = vrm.humanoid.getNormalizedBoneNode("rightShoulder");
       const leftUpperArm = vrm.humanoid.getNormalizedBoneNode("leftUpperArm");
       const rightUpperArm = vrm.humanoid.getNormalizedBoneNode("rightUpperArm");
+      const leftLowerArm = vrm.humanoid.getNormalizedBoneNode("leftLowerArm");
+      const rightLowerArm = vrm.humanoid.getNormalizedBoneNode("rightLowerArm");
       const nextBehavior = behaviorRef.current;
       const idleSwing = Math.sin(elapsedSec * 1.4) * 0.02;
 
       applyBoneRotation(head, { x: idleSwing * 0.4, y: idleSwing * 0.35, z: 0 });
       applyBoneRotation(neck, { x: 0, y: idleSwing * 0.25, z: 0 });
       applyBoneRotation(spine, { x: 0, y: 0, z: 0 });
-      applyBoneRotation(leftUpperArm, { x: 0.01, z: 0.01 });
-      applyBoneRotation(rightUpperArm, { x: 0.01, z: -0.01 });
+      applyBoneRotation(upperChest, { x: 0.01, y: 0, z: 0 });
+      applyBoneRotation(leftShoulder, { x: -0.03, z: -0.12 });
+      applyBoneRotation(rightShoulder, { x: -0.03, z: 0.12 });
+      applyBoneRotation(leftUpperArm, { x: -0.1, z: -1.05 });
+      applyBoneRotation(rightUpperArm, { x: -0.1, z: 1.05 });
+      applyBoneRotation(leftLowerArm, { z: -0.16 });
+      applyBoneRotation(rightLowerArm, { z: 0.16 });
 
       switch (nextBehavior.gesture) {
         case "thinking":
           applyBoneRotation(head, { x: 0.12, y: -0.1 });
           applyBoneRotation(neck, { x: 0.06, y: -0.06 });
+          applyBoneRotation(leftLowerArm, { z: -0.22 });
+          applyBoneRotation(rightLowerArm, { z: 0.22 });
           break;
         case "listening":
           applyBoneRotation(head, { x: 0.03, y: 0.12 });
@@ -128,14 +140,18 @@ export const VRMCanvas = ({ modelUrl, behavior }: VRMCanvasProps) => {
           break;
         case "explaining":
           applyBoneRotation(head, { x: -0.02, y: -0.06 });
-          applyBoneRotation(leftUpperArm, { x: -0.05, z: 0.2 });
-          applyBoneRotation(rightUpperArm, { x: -0.05, z: -0.2 });
+          applyBoneRotation(leftUpperArm, { x: -0.12, z: -0.78 });
+          applyBoneRotation(rightUpperArm, { x: -0.12, z: 0.78 });
+          applyBoneRotation(leftLowerArm, { z: -0.28 });
+          applyBoneRotation(rightLowerArm, { z: 0.28 });
           break;
         case "emphasis":
           applyBoneRotation(head, { x: -0.03, y: 0.06 });
           applyBoneRotation(neck, { x: -0.02 });
-          applyBoneRotation(leftUpperArm, { x: -0.12, z: 0.3 });
-          applyBoneRotation(rightUpperArm, { x: -0.12, z: -0.3 });
+          applyBoneRotation(leftUpperArm, { x: -0.15, z: -0.7 });
+          applyBoneRotation(rightUpperArm, { x: -0.15, z: 0.7 });
+          applyBoneRotation(leftLowerArm, { z: -0.35 });
+          applyBoneRotation(rightLowerArm, { z: 0.35 });
           break;
         default:
           break;

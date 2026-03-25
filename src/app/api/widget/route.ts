@@ -74,7 +74,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const open = () => {
     if (!iframe.src) {
       const source = encodeURIComponent(window.location.href);
-      iframe.src = appUrl + iframePath + "?source=" + source;
+      iframe.src = appUrl + iframePath + "?source=" + source + "&audio=1";
     }
     backdrop.classList.add("open");
     backdrop.setAttribute("aria-hidden", "false");

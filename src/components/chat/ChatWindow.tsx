@@ -61,6 +61,7 @@ type ChatApiResponse = {
 type ChatWindowProps = {
   sourcePage?: string;
   enableVoice?: boolean;
+  initialAudioUnlocked?: boolean;
 };
 
 const detectExpression = (
@@ -78,7 +79,8 @@ const detectExpression = (
 
 export const ChatWindow = ({
   sourcePage = "/contact",
-  enableVoice = false
+  enableVoice = false,
+  initialAudioUnlocked = false
 }: ChatWindowProps) => {
   const [session, setSession] = useState<ChatSessionState>(() => {
     const initial = createInitialSession();
@@ -93,8 +95,10 @@ export const ChatWindow = ({
   );
   const [viewMode, setViewMode] = useState<"voice" | "text">(enableVoice ? "voice" : "text");
   const [isListening, setIsListening] = useState(false);
+  const [isSpeechDetected, setIsSpeechDetected] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(enableVoice && voiceConfig.enabled && voiceConfig.sttEnabled);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [audioUnlocked, setAudioUnlocked] = useState(!enableVoice);
+  const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || !enableVoice);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
     gesture: "idle",
     voice: "muted",
@@ -139,6 +143,11 @@ export const ChatWindow = ({
   }, [audioUnlocked, enableVoice, latestAssistant, ttsEnabled]);
 
   useEffect(() => {
+    if (!initialAudioUnlocked || audioUnlocked) return;
+    setAudioUnlocked(true);
+  }, [audioUnlocked, initialAudioUnlocked]);
+
+  useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
       setIsSpeaking(false);
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -150,13 +159,13 @@ export const ChatWindow = ({
   useEffect(() => {
     const latestAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
     const expression = detectExpression(latestAssistantMessage, session.urgency);
-    const voice: AvatarBehaviorState["voice"] = isListening
+    const voice: AvatarBehaviorState["voice"] = isSpeechDetected
       ? "listening"
       : isSpeaking
         ? "speaking"
         : "muted";
 
-    const gesture: AvatarBehaviorState["gesture"] = isListening
+    const gesture: AvatarBehaviorState["gesture"] = isSpeechDetected
       ? "listening"
       : isLoading
         ? "thinking"
@@ -166,7 +175,7 @@ export const ChatWindow = ({
             : "explaining"
           : "idle";
 
-    const statusLabel = isListening
+    const statusLabel = isSpeechDetected
       ? "音声を聞き取り中..."
       : isSpeaking
         ? "回答を読み上げ中..."
@@ -178,7 +187,13 @@ export const ChatWindow = ({
 
     const nextBehavior: AvatarBehaviorState = { gesture, voice, expression, statusLabel };
     setAvatarBehavior(nextBehavior);
-  }, [isListening, isLoading, isSpeaking, messages, session.urgency]);
+  }, [isListening, isLoading, isSpeaking, isSpeechDetected, messages, session.urgency]);
+
+  useEffect(() => {
+    if (nextFieldRequest && viewMode === "voice") {
+      setViewMode("text");
+    }
+  }, [nextFieldRequest, viewMode]);
 
   const postChat = async (payload: {
     userInput?: string;
@@ -334,53 +349,45 @@ export const ChatWindow = ({
 
       <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
         {viewMode === "voice" && enableVoice ? (
-          <>
-            <div style={{ flex: "0 0 52%", minHeight: 220, padding: 12 }}>
-              <div
-                style={{
-                  height: "100%",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: 10,
-                  overflow: "hidden",
-                  background: "#f8fafc"
-                }}
-              >
-                {canRenderVrm ? (
-                  <VRMCanvas modelUrl={avatarRuntimeConfig.modelUrl} behavior={avatarBehavior} />
-                ) : (
-                  <div
-                    style={{
-                      height: "100%",
-                      display: "grid",
-                      placeItems: "center",
-                      color: "#64748b",
-                      fontSize: 13
-                    }}
-                  >
-                    VRMモデルURLを設定すると音声会話画面にアバターを表示します。
-                  </div>
-                )}
-              </div>
+          <div style={{ flex: 1, minHeight: 0, position: "relative", padding: 12 }}>
+            <div
+              style={{
+                height: "100%",
+                border: "1px solid #e2e8f0",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "#f8fafc",
+                position: "relative"
+              }}
+            >
+              {canRenderVrm ? (
+                <VRMCanvas modelUrl={avatarRuntimeConfig.modelUrl} behavior={avatarBehavior} />
+              ) : (
+                <div
+                  style={{
+                    height: "100%",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#64748b",
+                    fontSize: 13
+                  }}
+                >
+                  VRMモデルURLを設定すると音声会話画面にアバターを表示します。
+                </div>
+              )}
+              <VoiceControls
+                disabled={isLoading}
+                onTranscript={handleMessageSend}
+                micEnabled={micEnabled}
+                onToggleMic={setMicEnabled}
+                ttsEnabled={ttsEnabled}
+                onToggleTts={setTtsEnabled}
+                onListeningChange={setIsListening}
+                onSpeechDetectedChange={setIsSpeechDetected}
+                onUserInteraction={unlockAudio}
+              />
             </div>
-            <div style={{ padding: "0 12px 10px", color: "#334155", fontSize: 13 }}>
-              {latestAssistant?.content ?? "会話を開始すると、ここに最新の回答を表示します。"}
-            </div>
-            {!audioUnlocked && ttsEnabled ? (
-              <div
-                style={{
-                  margin: "0 12px 10px",
-                  padding: "8px 10px",
-                  borderRadius: 8,
-                  background: "#fff7ed",
-                  color: "#9a3412",
-                  fontSize: 12,
-                  border: "1px solid #fdba74"
-                }}
-              >
-                ブラウザの制限で音声再生には初回操作が必要です。画面を一度タップ/クリックしてください。
-              </div>
-            ) : null}
-          </>
+          </div>
         ) : (
           <div
             style={{
@@ -410,16 +417,6 @@ export const ChatWindow = ({
         />
       ) : (
         <>
-          {enableVoice ? (
-            <VoiceControls
-              disabled={isLoading}
-              onTranscript={handleMessageSend}
-              ttsEnabled={ttsEnabled}
-              onToggleTts={setTtsEnabled}
-              onListeningChange={setIsListening}
-              onUserInteraction={unlockAudio}
-            />
-          ) : null}
           {viewMode === "text" || !enableVoice ? (
             <ChatInput onSend={handleMessageSend} disabled={isLoading} />
           ) : null}
