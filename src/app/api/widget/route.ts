@@ -3,8 +3,8 @@ import { uiConfig } from "@/config/ui.config";
 
 const buildWidgetScript = (baseAppUrl: string) => {
   const escapedBase = baseAppUrl.replace(/"/g, "");
-  const escapedLabel = uiConfig.widgetButtonLabel.replace(/"/g, "");
-  const escapedTitle = uiConfig.widgetModalTitle.replace(/"/g, "");
+  const escapedLabel = "AIコンシェルジュ";
+  const escapedTitle = "AIコンシェルジュ";
   const escapedPath = uiConfig.widgetIframePath.replace(/"/g, "");
 
   return `
@@ -27,8 +27,8 @@ const buildWidgetScript = (baseAppUrl: string) => {
       return "*";
     }
   })();
-  const buttonLabel = scriptEl?.dataset?.buttonLabel || "${escapedLabel}";
-  const modalTitle = scriptEl?.dataset?.modalTitle || "${escapedTitle}";
+  const buttonLabel = "${escapedLabel}";
+  const modalTitle = "${escapedTitle}";
   const iframePath = scriptEl?.dataset?.iframePath || "${escapedPath}";
   const embeddedSettingsRaw = scriptEl?.dataset?.avatarSettings || "";
   const parentOrigin = window.location.origin;
@@ -93,15 +93,8 @@ const buildWidgetScript = (baseAppUrl: string) => {
   bridgeFrame.src = bridgeUrl;
 
   const applyWidgetLabels = (settings) => {
-    if (!settings || typeof settings !== "object") return;
-    const nextButtonLabel =
-      settings.widgetButtonLabel ||
-      (settings.avatarName ? settings.avatarName + "に相談" : buttonLabel);
-    const nextModalTitle =
-      settings.widgetModalTitle ||
-      (settings.companyName ? settings.companyName + " AI相談チャット" : modalTitle);
-    button.textContent = nextButtonLabel;
-    title.textContent = nextModalTitle;
+    button.textContent = buttonLabel;
+    title.textContent = modalTitle;
   };
 
   const readAvatarSettings = () => {

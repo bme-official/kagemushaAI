@@ -73,28 +73,50 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
     const applyExpression = (vrm: VRM, elapsedSec: number) => {
       const expressionManager = vrm.expressionManager;
       if (!expressionManager) return;
+      const safeSet = (name: string, value: number) => {
+        try {
+          expressionManager.setValue(name, value);
+        } catch {
+          // ignore unsupported expression name on each VRM
+        }
+      };
 
-      expressionManager.setValue("happy", 0);
-      expressionManager.setValue("angry", 0);
-      expressionManager.setValue("surprised", 0);
-      expressionManager.setValue("relaxed", 0);
-      expressionManager.setValue("aa", 0);
-      expressionManager.setValue("ih", 0);
-      expressionManager.setValue("ou", 0);
+      safeSet("happy", 0);
+      safeSet("angry", 0);
+      safeSet("surprised", 0);
+      safeSet("relaxed", 0);
+      safeSet("aa", 0);
+      safeSet("ih", 0);
+      safeSet("ou", 0);
+      safeSet("blink", 0);
+      safeSet("blinkLeft", 0);
+      safeSet("blinkRight", 0);
+
+      // Natural blink cycle: short close + occasional double blink.
+      const blinkCycleSec = 3.8;
+      const phase = elapsedSec % blinkCycleSec;
+      const blinkPulse = phase < 0.12 ? Math.sin((phase / 0.12) * Math.PI) : 0;
+      const secondBlinkPhase = (elapsedSec + 0.44) % (blinkCycleSec * 1.9);
+      const secondBlinkPulse =
+        secondBlinkPhase < 0.1 ? Math.sin((secondBlinkPhase / 0.1) * Math.PI) * 0.65 : 0;
+      const blink = Math.min(1, blinkPulse + secondBlinkPulse);
+      safeSet("blink", blink);
+      safeSet("blinkLeft", blink);
+      safeSet("blinkRight", blink);
 
       const nextBehavior = behaviorRef.current;
       switch (nextBehavior.expression) {
         case "smile":
-          expressionManager.setValue("happy", 0.6);
+          safeSet("happy", 0.6);
           break;
         case "serious":
-          expressionManager.setValue("angry", 0.25);
+          safeSet("angry", 0.25);
           break;
         case "surprised":
-          expressionManager.setValue("surprised", 0.55);
+          safeSet("surprised", 0.55);
           break;
         case "thinking":
-          expressionManager.setValue("relaxed", 0.35);
+          safeSet("relaxed", 0.35);
           break;
         default:
           break;
@@ -105,12 +127,12 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
         const base = nextBehavior.voice === "speaking" ? 0.1 : 0.06;
         const amp = nextBehavior.voice === "speaking" ? 0.17 : 0.11;
         const mouth = base + (Math.sin(elapsedSec * speed) + 1) * amp;
-        expressionManager.setValue("aa", mouth);
-        expressionManager.setValue("ih", mouth * 0.45);
-        expressionManager.setValue("ou", mouth * 0.4);
+        safeSet("aa", mouth);
+        safeSet("ih", mouth * 0.45);
+        safeSet("ou", mouth * 0.4);
       }
       if (nextBehavior.voice === "listening") {
-        expressionManager.setValue("relaxed", 0.2);
+        safeSet("relaxed", 0.2);
       }
     };
 
@@ -134,14 +156,17 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
       const nextBehavior = behaviorRef.current;
       const idleSwing = Math.sin(elapsedSec * 1.4) * 0.02;
       const handWave = Math.sin(elapsedSec * 2.1) * 0.06;
+      const breath = (Math.sin(elapsedSec * 1.05) + 1) * 0.5;
+      const breathChest = 0.012 + breath * 0.022;
+      const breathShoulder = 0.008 + breath * 0.012;
       const pose = nextBehavior.pose;
 
       applyBoneRotation(head, { x: idleSwing * 0.4, y: idleSwing * 0.35, z: 0 });
       applyBoneRotation(neck, { x: 0, y: idleSwing * 0.25, z: 0 });
-      applyBoneRotation(spine, { x: 0, y: 0, z: 0 });
-      applyBoneRotation(upperChest, { x: 0.01, y: 0, z: 0 });
-      applyBoneRotation(leftShoulder, { x: -0.03, z: -0.12 });
-      applyBoneRotation(rightShoulder, { x: -0.03, z: 0.12 });
+      applyBoneRotation(spine, { x: breathChest * 0.45, y: 0, z: 0 });
+      applyBoneRotation(upperChest, { x: breathChest, y: 0, z: 0 });
+      applyBoneRotation(leftShoulder, { x: -0.03 - breathShoulder * 0.25, z: -0.12 });
+      applyBoneRotation(rightShoulder, { x: -0.03 - breathShoulder * 0.25, z: 0.12 });
       applyBoneRotation(leftUpperArm, { x: -0.1, z: -1.05 });
       applyBoneRotation(rightUpperArm, { x: -0.1, z: 1.05 });
       applyBoneRotation(leftLowerArm, { z: -0.16 });
@@ -177,8 +202,8 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
         case "thinking":
           applyBoneRotation(head, { x: 0.12, y: -0.1 });
           applyBoneRotation(neck, { x: 0.06, y: -0.06 });
-          applyBoneRotation(leftLowerArm, { z: -0.22 });
-          applyBoneRotation(rightLowerArm, { z: 0.22 });
+          applyBoneRotation(leftLowerArm, { z: -0.22 - breathShoulder * 0.6 });
+          applyBoneRotation(rightLowerArm, { z: 0.22 + breathShoulder * 0.6 });
           break;
         case "listening":
           applyBoneRotation(head, { x: 0.03, y: 0.12 });
@@ -207,7 +232,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(rightHand, { x: 0.12, y: -0.18, z: 0.25 });
           break;
         case "armCross":
-          applyBoneRotation(head, { x: 0.01, y: -0.02 });
+          applyBoneRotation(head, { x: 0.01 + breathShoulder * 0.35, y: -0.02 });
           applyBoneRotation(leftShoulder, { x: 0.02, z: -0.22 });
           applyBoneRotation(rightShoulder, { x: 0.02, z: 0.22 });
           applyBoneRotation(leftUpperArm, { x: -0.35, y: 0.18, z: -0.45 });
@@ -227,7 +252,7 @@ export const VRMCanvas = ({ modelUrl, behavior, onModelReady }: VRMCanvasProps) 
           applyBoneRotation(leftLowerArm, { z: -0.14 });
           break;
         case "pointFinger":
-          applyBoneRotation(head, { x: -0.02, y: -0.05 });
+          applyBoneRotation(head, { x: -0.02 + idleSwing * 0.25, y: -0.05 });
           applyBoneRotation(rightUpperArm, { x: -0.2, y: -0.08, z: 0.58 });
           applyBoneRotation(rightLowerArm, { x: -0.14, y: -0.22, z: 0.84 });
           applyBoneRotation(rightHand, { x: 0.02, y: -0.1, z: 0.08 });

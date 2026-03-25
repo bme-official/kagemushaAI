@@ -58,6 +58,28 @@ type ChatApiResponse = {
   nextFieldRequest: StructuredFieldRequest | null;
 };
 
+const serviceMentionPrefix = (settings: RuntimeAvatarSettings) => {
+  const serviceName = settings.services?.find((service) => service.name)?.name;
+  const companyName = settings.companyName;
+  const avatarName = settings.avatarName;
+  if (!serviceName && !companyName && !avatarName) return "";
+  const chunks = [avatarName, companyName, serviceName].filter(Boolean);
+  return `【${chunks.join(" / ")}】 `;
+};
+
+const applyIdentityMention = (text: string, settings: RuntimeAvatarSettings) => {
+  const serviceName = settings.services?.find((service) => service.name)?.name;
+  const hasIdentityMention = [
+    settings.avatarName,
+    settings.companyName,
+    serviceName
+  ]
+    .filter(Boolean)
+    .some((token) => text.includes(token as string));
+  if (hasIdentityMention) return text;
+  return `${serviceMentionPrefix(settings)}${text}`;
+};
+
 type ChatWindowProps = {
   sourcePage?: string;
   enableVoice?: boolean;
@@ -344,8 +366,10 @@ export const ChatWindow = ({
   const getOpeningGreetingText = useCallback(() => {
     const companyName = runtimeAvatarSettings.companyName || "影武者AI";
     const name = runtimeAvatarSettings.avatarName || characterConfig.name;
-    return `こんにちは、${companyName}のお問い合わせサポート担当 ${name} です。ご相談内容を整理しながらご案内します。`;
-  }, [runtimeAvatarSettings.avatarName, runtimeAvatarSettings.companyName]);
+    const primaryService = runtimeAvatarSettings.services?.find((service) => service.name)?.name;
+    const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
+    return `こんにちは、${companyName}のお問い合わせサポート担当 ${name} です。${serviceSuffix}ご相談内容を整理しながらご案内します。`;
+  }, [runtimeAvatarSettings.avatarName, runtimeAvatarSettings.companyName, runtimeAvatarSettings.services]);
 
   const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
@@ -549,14 +573,14 @@ export const ChatWindow = ({
     setAssistantLipSyncActive(false);
   }, [isSpeechDetected]);
 
-  useEffect(() => {
-    if (!isSpeechDetected || !isListening || !isSpeaking) return;
+  const handleVoiceTranscript = (text: string) => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
     setIsSpeaking(false);
     setAssistantLipSyncActive(false);
-  }, [isListening, isSpeaking, isSpeechDetected]);
+    void handleMessageSend(text);
+  };
 
   useEffect(() => {
     return () => {
@@ -683,7 +707,18 @@ export const ChatWindow = ({
         return;
       }
       const data = (await response.json()) as ChatApiResponse;
-      setSession(data.session);
+      const prefixedMessages = [...data.session.messages];
+      const lastMessage = prefixedMessages[prefixedMessages.length - 1];
+      if (lastMessage?.role === "assistant") {
+        prefixedMessages[prefixedMessages.length - 1] = {
+          ...lastMessage,
+          content: applyIdentityMention(lastMessage.content, runtimeAvatarSettings)
+        };
+      }
+      setSession({
+        ...data.session,
+        messages: prefixedMessages
+      });
       setNextFieldRequest(data.nextFieldRequest);
     } finally {
       setIsLoading(false);
@@ -884,7 +919,7 @@ export const ChatWindow = ({
       {enableVoice ? (
         <VoiceControls
           disabled={!isEmbedVisible}
-          onTranscript={handleMessageSend}
+          onTranscript={handleVoiceTranscript}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}
           ttsEnabled={ttsEnabled}

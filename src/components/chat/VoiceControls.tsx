@@ -25,8 +25,6 @@ type BrowserSpeechRecognition = {
   maxAlternatives: number;
   continuous?: boolean;
   onstart?: (() => void) | null;
-  onsoundstart?: (() => void) | null;
-  onsoundend?: (() => void) | null;
   onspeechstart?: (() => void) | null;
   onspeechend?: (() => void) | null;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
@@ -69,7 +67,6 @@ export const VoiceControls = ({
   mode = "overlay"
 }: VoiceControlsProps) => {
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
-  const [isRecognitionActive, setIsRecognitionActive] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const shouldKeepListeningRef = useRef(false);
@@ -125,19 +122,7 @@ export const VoiceControls = ({
     recognition.maxAlternatives = 1;
     recognition.continuous = true;
     recognition.onstart = () => {
-      setIsRecognitionActive(true);
       onListeningChange?.(true);
-    };
-    recognition.onsoundstart = () => {
-      markSpeechDetected();
-    };
-    recognition.onsoundend = () => {
-      clearSpeechIdleTimer();
-      speechIdleTimeoutRef.current = window.setTimeout(() => {
-        setIsSpeechDetected(false);
-        onSpeechDetectedChange?.(false);
-        speechIdleTimeoutRef.current = null;
-      }, 260);
     };
     recognition.onspeechstart = () => {
       markSpeechDetected();
@@ -163,7 +148,6 @@ export const VoiceControls = ({
     recognition.onerror = (event) => {
       clearSpeechIdleTimer();
       setIsSpeechDetected(false);
-      setIsRecognitionActive(false);
       onListeningChange?.(false);
       onSpeechDetectedChange?.(false);
       if (event?.error === "not-allowed" || event?.error === "service-not-allowed") {
@@ -174,7 +158,6 @@ export const VoiceControls = ({
     recognition.onend = () => {
       clearSpeechIdleTimer();
       setIsSpeechDetected(false);
-      setIsRecognitionActive(false);
       onListeningChange?.(false);
       onSpeechDetectedChange?.(false);
       if (shouldKeepListeningRef.current && !disabled) {
@@ -200,7 +183,6 @@ export const VoiceControls = ({
       recognitionRef.current.stop();
     }
     setIsSpeechDetected(false);
-    setIsRecognitionActive(false);
     onListeningChange?.(false);
     onSpeechDetectedChange?.(false);
   };
@@ -259,18 +241,17 @@ export const VoiceControls = ({
         {[0, 1, 2].map((idx) => {
           const baseHeight = [8, 14, 10][idx];
           const animatedHeight = [14, 20, 16][idx];
-          const isActive = isSpeechDetected || isRecognitionActive;
           return (
             <span
               key={idx}
               style={{
                 width: 4,
                 borderRadius: 999,
-                height: isActive ? animatedHeight : baseHeight,
-                background: isSpeechDetected ? "#22c55e" : isRecognitionActive ? "#38bdf8" : "#94a3b8",
+                height: isSpeechDetected ? animatedHeight : baseHeight,
+                background: isSpeechDetected ? "#22c55e" : "#94a3b8",
                 transition: "all 120ms ease",
-                animation: isActive
-                  ? `kagemushaAudioBars ${isSpeechDetected ? 650 : 980}ms ease-in-out ${idx * 90}ms infinite alternate`
+                animation: isSpeechDetected
+                  ? `kagemushaAudioBars 650ms ease-in-out ${idx * 90}ms infinite alternate`
                   : "none"
               }}
             />
