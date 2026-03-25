@@ -546,8 +546,52 @@ export const ChatWindow = ({
     if (voiceConfig.sttEnabled) {
       setMicEnabled(true);
     }
-    unlockAudio();
-  }, [unlockAudio]);
+    setAudioUnlocked(true);
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const text = getOpeningGreetingText();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = voiceConfig.locale;
+    utterance.rate = voiceConfig.speechRate;
+    utterance.pitch = voiceConfig.speechPitch;
+    applyConfiguredVoice(utterance);
+    utterance.onstart = () => {
+      setNeedsAudioStart(false);
+      setIsSpeaking(true);
+      pulseAssistantLipSync();
+      hasSpokenOpeningRef.current = true;
+      if (latestAssistant) {
+        lastSpokenMessageIdRef.current = latestAssistant.id;
+      }
+    };
+    utterance.onboundary = () => pulseAssistantLipSync();
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+    };
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setAssistantLipSyncActive(false);
+      setNeedsAudioStart(true);
+    };
+
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(utterance);
+      window.setTimeout(() => {
+        trySpeakOpeningGreeting();
+      }, 300);
+    } catch {
+      setNeedsAudioStart(true);
+    }
+  }, [
+    applyConfiguredVoice,
+    getOpeningGreetingText,
+    latestAssistant,
+    pulseAssistantLipSync,
+    trySpeakOpeningGreeting
+  ]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
