@@ -172,14 +172,20 @@ export async function POST(request: NextRequest) {
   };
 
   // 問い合わせ送信完了後にユーザーが新たな会話を始めた場合は、
-  // 収集済みフィールドと意図をリセットして新しい会話として扱う。
-  // これにより「他にも聞いていい？」などの発話で確認カードが再表示されなくなる。
+  // セッション状態と会話履歴をリセットして新しい会話として扱う。
+  // メッセージ履歴（name: 〇〇 / email: ... など）を残したまま AI を呼ぶと
+  // AI が「問い合わせフロー継続中」と誤認識するため messages もクリアする。
   if (workingSession.phase === "completed" && body.userInput) {
     workingSession.phase = "collecting";
     workingSession.collectedFields = {};
     workingSession.inferredIntent = null;
     workingSession.inferredCategory = null;
     workingSession.summaryDraft = "";
+    // 完了後メッセージのみ残し、フォーム入力履歴は AI に渡さない
+    workingSession.messages = workingSession.messages.filter(
+      (m) => m.role === "assistant" && typeof m.content === "string" &&
+        (m.content.includes("受付を完了") || m.content.includes("ご連絡"))
+    ).slice(-1);
   }
 
   // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）。

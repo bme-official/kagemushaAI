@@ -385,21 +385,11 @@ export const VoiceControls = ({
             onToggleMic(newEnabled);
             if (newEnabled && isIOS) {
               shouldKeepListeningRef.current = true;
-              // iOS: まずマイク権限を明示的に要求してから SpeechRecognition を起動する。
-              // getUserMedia はジェスチャー内で呼ぶことで許可ダイアログを表示できる。
-              // 許可済みの場合は即座に then() に進み startListening() を呼ぶ。
-              if (navigator.mediaDevices?.getUserMedia) {
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                  .then(() => {
-                    if (shouldKeepListeningRef.current) startListening();
-                  })
-                  .catch(() => {
-                    shouldKeepListeningRef.current = false;
-                    setUnsupportedMessage("マイク権限が必要です。設定アプリからSafariのマイクを許可してください。");
-                  });
-              } else {
-                startListening();
-              }
+              // iOS: recognition.start() はジェスチャー内で同期的に呼ぶ必要がある。
+              // getUserMedia().then() のような非同期コールバックではジェスチャー文脈が
+              // 失われて service-not-allowed エラーになるため、直接起動する。
+              // SpeechRecognition.start() が初回の場合は iOS が自動でマイク許可ダイアログを表示する。
+              startListening();
             }
           }}
           disabled={disabled || !voiceConfig.sttEnabled}
