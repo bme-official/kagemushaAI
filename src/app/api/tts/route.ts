@@ -6,7 +6,9 @@ const OPENAI_VOICES = new Set(["alloy", "echo", "fable", "onyx", "nova", "shimme
 async function speakElevenLabs(text: string, voiceId: string): Promise<NextResponse> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "ELEVENLABS_API_KEY not configured" }, { status: 503 });
+    // API キー未設定の場合は OpenAI TTS にフォールバック
+    console.warn("[tts] ELEVENLABS_API_KEY未設定 → OpenAI shimmer にフォールバック");
+    return speakOpenAI(text, "shimmer");
   }
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_44100_128`,
@@ -25,8 +27,8 @@ async function speakElevenLabs(text: string, voiceId: string): Promise<NextRespo
   );
   if (!res.ok) {
     const err = await res.text();
-    console.error("[tts/elevenlabs] error:", err);
-    return NextResponse.json({ error: "upstream error" }, { status: 502 });
+    console.error("[tts/elevenlabs] error:", err, "→ OpenAI shimmer にフォールバック");
+    return speakOpenAI(text, "shimmer");
   }
   const buffer = await res.arrayBuffer();
   return new NextResponse(buffer, {
