@@ -179,7 +179,7 @@ export const ChatWindow = ({
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [openingMessageOverride, setOpeningMessageOverride] = useState<string | null>(null);
-  const [avatarReady, setAvatarReady] = useState(false);
+  const [, setAvatarReady] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
   const [avatarModelUrl, setAvatarModelUrl] = useState(avatarRuntimeConfig.modelUrl);
@@ -194,8 +194,6 @@ export const ChatWindow = ({
   const lastSpokenMessageIdRef = useRef<string | null>(null);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
-  // 世代カウンター: 古い TTS 呼び出しが API フォールバックを起動するのを防ぐ
-  const ttsGenerationRef = useRef(0);
   // API TTS 呼び出し番号: 非同期フェッチ中に新しい呼び出しが来たら旧呼び出しを中断する
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
@@ -405,43 +403,6 @@ export const ChatWindow = ({
     },
     [runtimeAvatarSettings.statusMappings]
   );
-
-  const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = runtimeAvatarSettings.voiceModel?.toLowerCase();
-    const voice =
-      (preferred
-        ? voices.find((item) => item.name.toLowerCase().includes(preferred))
-        : undefined) ??
-      voices.find((item) => item.lang.toLowerCase().startsWith(voiceConfig.locale.toLowerCase())) ??
-      voices.find((item) => item.lang.toLowerCase().startsWith("ja")) ??
-      voices[0];
-    if (voice) {
-      utterance.voice = voice;
-    }
-    // 企業名の読みがなを設定している場合は読み替える（ブラウザTTSの発音改善）
-    if (runtimeAvatarSettings.companyName && runtimeAvatarSettings.companyNameKana) {
-      utterance.text = utterance.text.replaceAll(
-        runtimeAvatarSettings.companyName,
-        runtimeAvatarSettings.companyNameKana
-      );
-    }
-    // アバター名（表示名）も読みがなに置換する
-    if (runtimeAvatarSettings.avatarName && runtimeAvatarSettings.avatarNameKana) {
-      utterance.text = utterance.text.replaceAll(
-        runtimeAvatarSettings.avatarName,
-        runtimeAvatarSettings.avatarNameKana
-      );
-    } else if (runtimeAvatarSettings.avatarNameKana) {
-      utterance.text = utterance.text.replaceAll(characterConfig.name, runtimeAvatarSettings.avatarNameKana);
-    }
-  }, [
-    runtimeAvatarSettings.avatarName,
-    runtimeAvatarSettings.avatarNameKana,
-    runtimeAvatarSettings.companyName,
-    runtimeAvatarSettings.companyNameKana
-  ]);
 
   const speakViaTtsApi = useCallback(
     async (

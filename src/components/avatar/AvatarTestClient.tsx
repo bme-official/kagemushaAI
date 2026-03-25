@@ -200,7 +200,6 @@ export const AvatarTestClient = () => {
             avatarAge?: string;
             companyName?: string;
             companyNameKana?: string;
-            voiceModel?: string;
             ttsApiVoice?: string;
             profile?: string;
             services?: ServiceItem[];
@@ -728,7 +727,6 @@ export const AvatarTestClient = () => {
               avatarAge,
               companyName,
               companyNameKana,
-              voiceModel,
               profile,
               services
             },
