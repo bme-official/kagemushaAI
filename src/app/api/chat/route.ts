@@ -8,6 +8,8 @@ import { classifyInquiry } from "@/lib/ai/classifyInquiry";
 import { summarizeInquiry } from "@/lib/ai/summarizeInquiry";
 import { getNextFieldRequest } from "@/lib/inquiry/fieldFlow";
 import { isValidEmail, isValidPhone } from "@/lib/validation/contact";
+import { getInMemoryAvatarSettings } from "@/lib/avatar/runtimeSettingsStore";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   ChatAgentResult,
   ChatApiRequest,
@@ -16,6 +18,22 @@ import type {
   ConversationMessage,
   StructuredFieldRequest
 } from "@/types/chat";
+
+/** Supabase またはインメモリストアから最新の設定を取得する */
+const fetchServerAvatarSettings = async (): Promise<ChatApiRequest["avatarSettings"] | null> => {
+  try {
+    const supabase = createSupabaseServerClient();
+    if (supabase) {
+      const { data } = await supabase
+        .from("avatar_settings")
+        .select("settings")
+        .eq("id", "default")
+        .maybeSingle();
+      if (data?.settings) return data.settings as ChatApiRequest["avatarSettings"];
+    }
+  } catch { /* ignore */ }
+  return getInMemoryAvatarSettings() as ChatApiRequest["avatarSettings"] | null;
+};
 
 const pushMessage = (
   messages: ConversationMessage[],
@@ -123,6 +141,12 @@ export async function POST(request: NextRequest) {
     collectedFields: { ...session.collectedFields }
   };
 
+  // サーバーの最新設定をクライアント送信設定より優先（Supabase → インメモリ → クライアント送信の順）
+  const serverSettings = await fetchServerAvatarSettings();
+  const effectiveAvatarSettings: ChatApiRequest["avatarSettings"] = serverSettings
+    ? { ...(body.avatarSettings ?? {}), ...serverSettings }
+    : (body.avatarSettings ?? undefined);
+
   let userText: string | undefined;
   if (body.userInput) {
     userText = body.userInput.trim();
@@ -182,7 +206,7 @@ export async function POST(request: NextRequest) {
   workingSession.urgency = resultFromRule.urgency;
   workingSession.needsHuman = resultFromRule.needsHuman;
 
-  const aiResult = await callOpenAI(workingSession, userText, body.avatarSettings);
+  const aiResult = await callOpenAI(workingSession, userText, effectiveAvatarSettings);
   if (aiResult) {
     workingSession.inferredCategory = aiResult.inferredCategory;
     workingSession.inferredIntent = aiResult.inferredIntent;
@@ -213,7 +237,7 @@ export async function POST(request: NextRequest) {
   const assistantTextRaw =
     aiResult?.reply ??
     buildFallbackReply(userText, workingSession.collectedFields, nextFieldRequest);
-  const assistantText = applyAvatarIdentityToReply(assistantTextRaw, body.avatarSettings);
+  const assistantText = applyAvatarIdentityToReply(assistantTextRaw, effectiveAvatarSettings);
 
   let finalNextFieldRequest = nextFieldRequest;
   if (workingSession.phase === "confirming") {

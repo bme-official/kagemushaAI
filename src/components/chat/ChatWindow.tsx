@@ -440,8 +440,7 @@ export const ChatWindow = ({
     runtimeAvatarSettings.avatarName,
     runtimeAvatarSettings.avatarNameKana,
     runtimeAvatarSettings.companyName,
-    runtimeAvatarSettings.companyNameKana,
-    runtimeAvatarSettings.voiceModel
+    runtimeAvatarSettings.companyNameKana
   ]);
 
   const speakViaTtsApi = useCallback(
@@ -515,78 +514,14 @@ export const ChatWindow = ({
       onError: () => void;
       markAsSpokenId?: string;
     }) => {
-      // 既存の API 音声を必ず停止
+      // 既存の音声を必ず停止してから OpenAI TTS を使用（全ブラウザ・iOS で確実に動作）
       stopApiAudio();
-      // ブラウザ TTS が使えない場合は即座に API TTS へ
-      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
-        ++ttsGenerationRef.current; // gen を進めて旧呼び出しを無効化
-        void speakViaTtsApi(text, handlers);
-        return;
-      }
-      // 世代カウンターを進め、後続の新しい呼び出しが来たら古い呼び出しのAPIフォールバックを無効化
-      const myGen = ++ttsGenerationRef.current;
-      let started = false;
-      let startTimeout: number | null = null;
-      // タイムアウトまたは onerror のどちらか一方だけが API TTS を呼ぶ
-      let apiTriggered = false;
-      const buildUtterance = (withConfiguredVoice: boolean) => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = voiceConfig.locale;
-        utterance.rate = voiceConfig.speechRate;
-        utterance.pitch = voiceConfig.speechPitch;
-        if (withConfiguredVoice) {
-          applyConfiguredVoice(utterance);
-        }
-        utterance.onstart = () => {
-          started = true;
-          if (startTimeout !== null) {
-            window.clearTimeout(startTimeout);
-            startTimeout = null;
-          }
-          if (handlers.markAsSpokenId) {
-            lastSpokenMessageIdRef.current = handlers.markAsSpokenId;
-          }
-          handlers.onStart();
-        };
-        utterance.onboundary = handlers.onBoundary;
-        utterance.onend = () => {
-          if (startTimeout !== null) {
-            window.clearTimeout(startTimeout);
-            startTimeout = null;
-          }
-          handlers.onEnd();
-        };
-        return utterance;
-      };
-
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-
-      const first = buildUtterance(true);
-      // ブラウザ TTS がエラー → API TTS にフォールバック
-      // cancel()によるonerrorと startTimeout の両方が呼ばれないように apiTriggered で防護
-      first.onerror = () => {
-        if (startTimeout !== null) {
-          window.clearTimeout(startTimeout);
-          startTimeout = null;
-        }
-        if (started) return; // 再生開始後のキャンセルはフォールバック不要
-        if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
-        if (apiTriggered) return; // タイムアウトが既に API TTS を起動済み
-        apiTriggered = true;
-        void speakViaTtsApi(text, handlers);
-      };
-      window.speechSynthesis.speak(first);
-      // 1.2 秒以内に onstart が来なければ API TTS にフォールバック
-      startTimeout = window.setTimeout(() => {
-        if (started) return;
-        if (ttsGenerationRef.current !== myGen) return; // 新しい呼び出しに置き換え済み
-        apiTriggered = true; // cancel() が onerror を発火しても二重呼び出しを防ぐ
+      if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
-        void speakViaTtsApi(text, handlers);
-      }, 1200);
+      }
+      void speakViaTtsApi(text, handlers);
     },
-    [applyConfiguredVoice, speakViaTtsApi, stopApiAudio]
+    [speakViaTtsApi, stopApiAudio]
   );
 
   const unlockAudio = useCallback(() => {
@@ -658,7 +593,7 @@ export const ChatWindow = ({
   }, [isSpeechDetected, stopApiAudio]);
 
   const handleVoiceTranscript = (text: string) => {
-    if (isSpeaking && !isSpeechDetected) return;
+    // 読み上げ中でも文字起こし結果は必ず処理する。TTS は即座に停止して聞き取り優先。
     stopApiAudio();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();

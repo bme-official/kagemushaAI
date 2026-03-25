@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { VRMCanvas } from "@/components/avatar/VRMCanvas";
 import type {
@@ -83,8 +83,9 @@ export const AvatarTestClient = () => {
   const [avatarAge, setAvatarAge] = useState("25");
   const [companyName, setCompanyName] = useState("株式会社影武者AI");
   const [companyNameKana, setCompanyNameKana] = useState("かぶしきがいしゃかげむしゃえーあい");
-  const [voiceModel, setVoiceModel] = useState("ja-JP-standard");
-  const [ttsApiVoice, setTtsApiVoice] = useState("nova");
+  const [ttsApiVoice, setTtsApiVoice] = useState("shimmer");
+  const [voicePreviewLoading, setVoicePreviewLoading] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const [profile, setProfile] = useState("丁寧で落ち着いた口調。ヒアリングと要約が得意。");
   const [statuses, setStatuses] = useState(defaultStatuses);
   const [newStatusName, setNewStatusName] = useState("");
@@ -120,7 +121,6 @@ export const AvatarTestClient = () => {
     avatarAge?: string;
     companyName?: string;
     companyNameKana?: string;
-    voiceModel?: string;
     ttsApiVoice?: string;
     profile?: string;
     services?: ServiceItem[];
@@ -140,13 +140,50 @@ export const AvatarTestClient = () => {
     if (parsed.avatarAge) setAvatarAge(parsed.avatarAge);
     if (parsed.companyName) setCompanyName(parsed.companyName);
     if (parsed.companyNameKana) setCompanyNameKana(parsed.companyNameKana);
-    if (parsed.voiceModel) setVoiceModel(parsed.voiceModel);
     if (parsed.ttsApiVoice) setTtsApiVoice(parsed.ttsApiVoice);
     if (parsed.profile) setProfile(parsed.profile);
     if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
     if (parsed.statuses?.length) setStatuses(parsed.statuses);
     if (parsed.statusMappings) setStatusMappings(parsed.statusMappings);
   }, [candidates]);
+
+  const handleVoicePreview = useCallback(async () => {
+    if (voicePreviewLoading) return;
+    // 再生中の場合は停止
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+      setVoicePreviewLoading(false);
+      return;
+    }
+    setVoicePreviewLoading(true);
+    try {
+      const sampleText = `こんにちは！私の声はこのようなものです。どうぞよろしくお願いします。`;
+      const response = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: sampleText, voice: ttsApiVoice })
+      });
+      if (!response.ok) throw new Error("TTS failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      previewAudioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+        setVoicePreviewLoading(false);
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        previewAudioRef.current = null;
+        setVoicePreviewLoading(false);
+      };
+      await audio.play();
+    } catch {
+      setVoicePreviewLoading(false);
+    }
+  }, [ttsApiVoice, voicePreviewLoading]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -189,7 +226,6 @@ export const AvatarTestClient = () => {
         avatarAge?: string;
         companyName?: string;
         companyNameKana?: string;
-        voiceModel?: string;
         ttsApiVoice?: string;
         profile?: string;
         services?: ServiceItem[];
@@ -214,7 +250,6 @@ export const AvatarTestClient = () => {
       avatarAge,
       companyName,
       companyNameKana,
-      voiceModel,
       ttsApiVoice,
       profile,
       services,
@@ -424,61 +459,54 @@ export const AvatarTestClient = () => {
             style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
           />
         </div>
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 13, color: "#334155" }}>
-            声（ブラウザTTS / 日本語音声）
-            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>OS・ブラウザにインストール済みの音声を使用</span>
+        <div style={{ display: "grid", gap: 8 }}>
+          <label style={{ fontSize: 13, color: "#334155", fontWeight: 600 }}>
+            声の選択
+            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6, fontWeight: 400 }}>
+              日本語対応 AI 音声（全ブラウザ・iOS で確実に動作）
+            </span>
           </label>
-          <select
-            value={voiceModel}
-            onChange={(event) => setVoiceModel(event.target.value)}
-            style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
-          >
-            <optgroup label="汎用（日本語）">
-              <option value="ja-jp">日本語デフォルト</option>
-            </optgroup>
-            <optgroup label="macOS / iOS">
-              <option value="kyoko">Kyoko（女性・標準）</option>
-              <option value="otoya">Otoya（男性・標準）</option>
-              <option value="hattori">Hattori（男性・Enhanced）</option>
-              <option value="o-ren">O-Ren（女性・Enhanced）</option>
-            </optgroup>
-            <optgroup label="Windows">
-              <option value="haruka">Microsoft Haruka（女性）</option>
-              <option value="ayumi">Microsoft Ayumi（女性）</option>
-              <option value="keita">Microsoft Keita（男性）</option>
-            </optgroup>
-            <optgroup label="Android / Chrome">
-              <option value="google 日本語">Google 日本語</option>
-            </optgroup>
-          </select>
-        </div>
-        <div style={{ display: "grid", gap: 6 }}>
-          <label style={{ fontSize: 13, color: "#334155" }}>
-            声（OpenAI TTS / 日本語対応）
-            <span style={{ fontSize: 11, color: "#64748b", marginLeft: 6 }}>ブラウザTTSが使えない場合・iOSで使用</span>
-          </label>
-          <select
-            value={ttsApiVoice}
-            onChange={(event) => setTtsApiVoice(event.target.value)}
-            style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
-          >
-            <optgroup label="女性（日本語おすすめ）">
-              <option value="shimmer">shimmer（落ち着いた女性 ★日本語推奨）</option>
-              <option value="nova">nova（自然な女性）</option>
-              <option value="coral">coral（温かみのある女性）</option>
-            </optgroup>
-            <optgroup label="男性（日本語対応）">
-              <option value="echo">echo（男性）</option>
-              <option value="onyx">onyx（低音男性）</option>
-              <option value="ash">ash（落ち着いた男性）</option>
-            </optgroup>
-            <optgroup label="その他">
-              <option value="alloy">alloy（ニュートラル）</option>
-              <option value="sage">sage（穏やかな中性）</option>
-              <option value="fable">fable（英国アクセント）</option>
-            </optgroup>
-          </select>
+          <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <select
+              value={ttsApiVoice}
+              onChange={(event) => setTtsApiVoice(event.target.value)}
+              style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px" }}
+            >
+              <optgroup label="女性（日本語おすすめ）">
+                <option value="shimmer">shimmer — 落ち着いた女性 ★日本語推奨</option>
+                <option value="nova">nova — 自然な女性</option>
+                <option value="coral">coral — 温かみのある女性</option>
+                <option value="sage">sage — 穏やかな中性</option>
+              </optgroup>
+              <optgroup label="男性（日本語対応）">
+                <option value="echo">echo — 男性</option>
+                <option value="onyx">onyx — 低音男性</option>
+                <option value="ash">ash — 落ち着いた男性</option>
+                <option value="fable">fable — 英国アクセント男性</option>
+              </optgroup>
+              <optgroup label="ニュートラル">
+                <option value="alloy">alloy — ニュートラル</option>
+              </optgroup>
+            </select>
+            <button
+              type="button"
+              onClick={handleVoicePreview}
+              disabled={false}
+              style={{
+                border: "1px solid #0f172a",
+                borderRadius: 8,
+                background: voicePreviewLoading ? "#64748b" : "#0f172a",
+                color: "#fff",
+                padding: "8px 14px",
+                fontSize: 13,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                minWidth: 72
+              }}
+            >
+              {voicePreviewLoading ? "■ 停止" : "▶ 試聴"}
+            </button>
+          </div>
         </div>
         <div style={{ display: "grid", gap: 6 }}>
           <label style={{ fontSize: 13, color: "#334155" }}>プロフィール</label>
