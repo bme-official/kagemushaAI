@@ -198,6 +198,12 @@ export const ChatWindow = ({
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
   const conversationStartedRef = useRef(false);
+  // TTS先行フェッチキャッシュ: postChat でAI応答受信直後にfetch開始し、useEffect発火時に再利用
+  const ttsPrefetchRef = useRef<{
+    text: string;
+    voice: string;
+    promise: Promise<Response | null>;
+  } | null>(null);
 
   const stopApiAudio = useCallback(() => {
     const a = apiAudioRef.current;
@@ -420,14 +426,27 @@ export const ChatWindow = ({
       stopApiAudio();
       try {
         const apiVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
-        const response = await fetch("/api/tts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text.slice(0, 800), voice: apiVoice })
-        });
+        const ttsText = text.slice(0, 800);
+
+        // 先行フェッチキャッシュがあれば再利用（postChatで先行開始済みのリクエスト）
+        const prefetch = ttsPrefetchRef.current;
+        let responsePromise: Promise<Response | null>;
+        if (prefetch && prefetch.text === ttsText && prefetch.voice === apiVoice) {
+          ttsPrefetchRef.current = null;
+          responsePromise = prefetch.promise;
+        } else {
+          ttsPrefetchRef.current = null;
+          responsePromise = fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: ttsText, voice: apiVoice })
+          }).catch(() => null);
+        }
+
+        const response = await responsePromise;
         // フェッチ中に新しい呼び出しが来ていたら破棄
         if (apiCallCounterRef.current !== myApiCall) return;
-        if (!response.ok) {
+        if (!response?.ok) {
           handlers.onError();
           return;
         }
@@ -708,6 +727,26 @@ export const ChatWindow = ({
           content: normalizeAssistantText(lastMessage.content, runtimeAvatarSettings)
         };
       }
+
+      // TTS先行フェッチ: Reactの再レンダーより前にTTS APIリクエストを開始して遅延を削減
+      if (enableVoice && ttsEnabled && audioUnlocked && isEmbedVisible) {
+        const ttsText = (prefixedMessages[prefixedMessages.length - 1]?.role === "assistant"
+          ? prefixedMessages[prefixedMessages.length - 1].content
+          : "").slice(0, 800);
+        const ttsVoice = runtimeAvatarSettings.ttsApiVoice || "nova";
+        if (ttsText) {
+          ttsPrefetchRef.current = {
+            text: ttsText,
+            voice: ttsVoice,
+            promise: fetch("/api/tts", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: ttsText, voice: ttsVoice })
+            }).catch(() => null)
+          };
+        }
+      }
+
       setSession({
         ...data.session,
         messages: prefixedMessages
