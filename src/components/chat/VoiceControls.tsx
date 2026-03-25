@@ -160,7 +160,6 @@ export const VoiceControls = ({
     }
     // continuous:true にすることで onend からの再起動（ジェスチャー要件あり）を避ける。
     // iOS でも continuous:true を使用し、セッションが自然に終了した場合のみ onend で再起動する。
-    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const recognition = new Recognition();
     recognition.lang = voiceConfig.locale;
     recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別

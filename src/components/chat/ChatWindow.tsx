@@ -16,6 +16,7 @@ import { VoiceControls } from "@/components/chat/VoiceControls";
 import type { AvatarBehaviorState } from "@/types/avatar";
 import type {
   ChatSessionState,
+  CollectedContactFields,
   ConversationMessage,
   StructuredFieldRequest
 } from "@/types/chat";
@@ -1000,7 +1001,7 @@ export const ChatWindow = ({
   };
 
   // 「修正する」ボタンでフィールドを選択した際、そのフィールドの入力欄を表示する（API 不要）
-  const handleEditField = (fieldName: string) => {
+  const handleEditField = (fieldName: keyof CollectedContactFields) => {
     const fieldMeta: Record<string, { inputType: string; label: string; placeholder?: string; required: boolean }> = {
       organization: { inputType: "text", label: "会社名", placeholder: "例) 株式会社〇〇", required: true },
       name: { inputType: "text", label: "お名前", placeholder: "例) 山田 太郎", required: true },
