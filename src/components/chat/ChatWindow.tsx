@@ -11,6 +11,7 @@ import { ChatInput } from "@/components/chat/ChatInput";
 import { ConversationSummary } from "@/components/chat/ConversationSummary";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { StructuredFieldPrompt } from "@/components/chat/StructuredFieldPrompt";
+import { InquiryConfirmCard } from "@/components/chat/InquiryConfirmCard";
 import { VoiceControls } from "@/components/chat/VoiceControls";
 import type { AvatarBehaviorState } from "@/types/avatar";
 import type {
@@ -190,7 +191,7 @@ export const ChatWindow = ({
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [openingMessageOverride, setOpeningMessageOverride] = useState<string | null>(null);
-  const [, setAvatarReady] = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
   const [avatarModelUrl, setAvatarModelUrl] = useState(avatarRuntimeConfig.modelUrl);
@@ -210,6 +211,12 @@ export const ChatWindow = ({
   const apiCallCounterRef = useRef(0);
   // ユーザーが最初のメッセージを送った後は設定再ロードでTTSを中断しない
   const conversationStartedRef = useRef(false);
+  // avatarModelUrl が変わるたびにロード中フラグを立てる
+  useEffect(() => {
+    if (canRenderVrm) setAvatarLoading(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarModelUrl]);
+
   // TTS先行フェッチキャッシュ: postChat でAI応答受信直後にfetch開始し、useEffect発火時に再利用
   const ttsPrefetchRef = useRef<{
     text: string;
@@ -253,7 +260,7 @@ export const ChatWindow = ({
       lastSpokenMessageIdRef.current = null;
     }
     if (parsed.modelUrl) {
-      setAvatarReady(false);
+      setAvatarLoading(true);
       setAvatarModelUrl(parsed.modelUrl);
     } else {
       setAvatarModelUrl(avatarRuntimeConfig.modelUrl);
@@ -674,8 +681,8 @@ export const ChatWindow = ({
       ? gestureOptionMap[resolved.mapping.gestureOptionIds[0]] ?? fallbackGesture
       : fallbackGesture;
     const resolvedPose = resolved?.mapping.poses.length ? resolved.mapping.poses[0] : fallbackPose;
-    // 感情ステータス名は非表示。ラベルは常に4状態（idle/listening/thinking/speaking）のみ
-    const statusLabel = fallbackStatusLabel;
+    // アバターロード中は loading... を優先。感情ステータス名は非表示。
+    const statusLabel = avatarLoading && canRenderVrm ? "loading..." : fallbackStatusLabel;
     const lipSyncActive = !isSpeechDetected && assistantLipSyncActive;
     const nextBehavior: AvatarBehaviorState = {
       pose: resolvedPose,
@@ -689,6 +696,8 @@ export const ChatWindow = ({
   }, [
     assistantLipSyncActive,
     isListening,
+    avatarLoading,
+    canRenderVrm,
     isLoading,
     isSpeaking,
     isSpeechDetected,
@@ -941,7 +950,7 @@ export const ChatWindow = ({
                 <VRMCanvas
                   modelUrl={avatarModelUrl}
                   behavior={avatarBehavior}
-                  onModelReady={() => setAvatarReady(true)}
+                  onModelReady={() => setAvatarLoading(false)}
                 />
               ) : (
                 <div
@@ -998,27 +1007,33 @@ export const ChatWindow = ({
 
       {session.phase === "completed" ? null : (
         <>
-          {nextFieldRequest && viewMode === "voice" ? (
-            enableVoice ? (
-              <div
-                style={{
-                  position: "absolute",
-                  left: 12,
-                  right: 12,
-                  bottom: 74,
-                  zIndex: 21,
-                  borderRadius: 10,
-                  overflow: "hidden",
-                  boxShadow: "0 10px 28px rgba(15,23,42,.24)"
-                }}
-              >
+          {nextFieldRequest && viewMode === "voice" && enableVoice ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 12,
+                right: 12,
+                bottom: 74,
+                zIndex: 21,
+                borderRadius: 10,
+                overflow: "hidden"
+              }}
+            >
+              {nextFieldRequest.fieldName === "confirmSubmit" ? (
+                <InquiryConfirmCard
+                  collectedFields={session.collectedFields}
+                  onConfirm={() => handleFieldSend("yes")}
+                  onEdit={() => handleFieldSend("no")}
+                  disabled={isLoading}
+                />
+              ) : (
                 <StructuredFieldPrompt
                   request={nextFieldRequest}
                   onSubmit={handleFieldSend}
                   disabled={isLoading}
                 />
-              </div>
-            ) : null
+              )}
+            </div>
           ) : null}
           {(viewMode === "text" || !enableVoice) && !isLoading ? (
             <ChatInput

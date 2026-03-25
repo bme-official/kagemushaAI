@@ -248,6 +248,7 @@ export const VoiceControls = ({
   if (!voiceConfig.enabled) return null;
 
   // ステータスごとのバー色とラベル色
+  const isLoading = statusLabel === "loading...";
   const isListening = statusLabel === "listening...";
   const isThinking = statusLabel === "thinking...";
   const isSpeaking = statusLabel === "speaking...";
@@ -269,7 +270,7 @@ export const VoiceControls = ({
         animation: `kagemushaBarBounce ${duration}ms ease-in-out ${idx * stagger}ms infinite alternate`
       };
     }
-    if (isThinking) {
+    if (isThinking || isLoading) {
       return {
         width: 4,
         borderRadius: 999,
