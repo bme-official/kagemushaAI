@@ -293,8 +293,17 @@ export async function POST(request: NextRequest) {
     // AI が会話文脈から示唆したフィールドをヒントとして渡す（会話とフォームの同期）
     aiSuggestedField: aiResult?.nextFieldRequest ?? null
   });
-  const hasRequired = inquiryConfig.requiredFieldsForSubmit.every((field) =>
-    Boolean(workingSession.collectedFields[field])
+  // 日程調整・打ち合わせ意図がある場合は、希望日時（deadline）も確認してから確定フェーズへ移行する。
+  // deadline は voiceOnly フィールドのためフォームは表示せず、AI が会話の中で自然に聞き出す。
+  const MEETING_INTENTS = ["日程調整", "打ち合わせ希望"];
+  const isMeetingIntent = MEETING_INTENTS.some(
+    (intent) => workingSession.inferredIntent?.includes(intent)
+  );
+  const extraRequired: string[] = isMeetingIntent && !workingSession.collectedFields.deadline
+    ? ["deadline"]
+    : [];
+  const hasRequired = [...inquiryConfig.requiredFieldsForSubmit, ...extraRequired].every((field) =>
+    Boolean(workingSession.collectedFields[field as keyof typeof workingSession.collectedFields])
   );
 
   // 必須項目が揃ったら任意フィールドの示唆を無視して必ず確認フェーズへ移行する。
