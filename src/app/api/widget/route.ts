@@ -30,6 +30,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const buttonLabel = scriptEl?.dataset?.buttonLabel || "${escapedLabel}";
   const modalTitle = scriptEl?.dataset?.modalTitle || "${escapedTitle}";
   const iframePath = scriptEl?.dataset?.iframePath || "${escapedPath}";
+  const embeddedSettingsRaw = scriptEl?.dataset?.avatarSettings || "";
 
   const style = document.createElement("style");
   style.textContent = \`
@@ -78,13 +79,34 @@ const buildWidgetScript = (baseAppUrl: string) => {
   iframe.allow = "microphone *; autoplay *";
   iframe.referrerPolicy = "strict-origin-when-cross-origin";
 
+  const readAvatarSettings = () => {
+    if (embeddedSettingsRaw) {
+      try {
+        const parsed = JSON.parse(embeddedSettingsRaw);
+        if (parsed && typeof parsed === "object") return parsed;
+      } catch {
+        // ignore invalid dataset payload
+      }
+    }
+    try {
+      const raw = window.localStorage.getItem("kagemusha-avatar-settings");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
   const notifyIframeVisibility = (visible, userGesture) => {
     if (!iframe.contentWindow) return;
+    const settings = readAvatarSettings();
     iframe.contentWindow.postMessage(
       {
         type: "kagemusha-chat-visibility",
         visible,
-        userGesture
+        userGesture,
+        avatarSettings: settings
       },
       appOrigin
     );
@@ -93,7 +115,11 @@ const buildWidgetScript = (baseAppUrl: string) => {
   const open = () => {
     if (!iframe.src) {
       const source = encodeURIComponent(window.location.href);
-      iframe.src = appUrl + iframePath + "?source=" + source + "&audio=1";
+      const settings = readAvatarSettings();
+      const settingsParam = settings
+        ? "&settings=" + encodeURIComponent(JSON.stringify(settings))
+        : "";
+      iframe.src = appUrl + iframePath + "?source=" + source + "&audio=1" + settingsParam;
     } else {
       notifyIframeVisibility(true, true);
     }

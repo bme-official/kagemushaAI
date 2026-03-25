@@ -62,6 +62,7 @@ type ChatWindowProps = {
   sourcePage?: string;
   enableVoice?: boolean;
   initialAudioUnlocked?: boolean;
+  initialAvatarSettings?: string;
 };
 
 const detectExpression = (
@@ -128,7 +129,8 @@ const gestureOptionMap: Record<string, AvatarBehaviorState["gesture"]> = {
 export const ChatWindow = ({
   sourcePage = "/contact",
   enableVoice = false,
-  initialAudioUnlocked = false
+  initialAudioUnlocked = false,
+  initialAvatarSettings
 }: ChatWindowProps) => {
   const [session, setSession] = useState<ChatSessionState>(() => {
     const initial = createInitialSession();
@@ -165,6 +167,33 @@ export const ChatWindow = ({
   const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
 
+  const applyRuntimeSettings = useCallback((parsed: RuntimeAvatarSettings | null | undefined) => {
+    if (!parsed) return;
+    setRuntimeAvatarSettings(parsed);
+    if (parsed.avatarName) {
+      setAvatarNameDisplay(parsed.avatarName);
+    }
+    const runtimeCompany = parsed.companyName || "影武者AI";
+    const runtimeName = parsed.avatarName || characterConfig.name;
+    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。ご相談内容を整理しながらご案内します。`;
+    setSession((prev) => {
+      if (!prev.messages.length) return prev;
+      const first = prev.messages[0];
+      if (first.role !== "assistant") return prev;
+      if (prev.phase !== "collecting") return prev;
+      return {
+        ...prev,
+        messages: [{ ...first, content: openingMessage }, ...prev.messages.slice(1)]
+      };
+    });
+    if (parsed.modelUrl) {
+      setAvatarReady(false);
+      setAvatarModelUrl(parsed.modelUrl);
+    } else {
+      setAvatarModelUrl(avatarRuntimeConfig.modelUrl);
+    }
+  }, []);
+
   const messages = useMemo(() => session.messages, [session.messages]);
   const latestAssistant = useMemo(
     () => [...messages].reverse().find((msg) => msg.role === "assistant"),
@@ -175,52 +204,43 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const handleMessage = (event: MessageEvent<{ type?: string; visible?: boolean; userGesture?: boolean }>) => {
+    const handleMessage = (event: MessageEvent<{
+      type?: string;
+      visible?: boolean;
+      userGesture?: boolean;
+      avatarSettings?: RuntimeAvatarSettings;
+    }>) => {
       if (event.data?.type !== "kagemusha-chat-visibility") return;
       setIsEmbedVisible(Boolean(event.data.visible));
       if (event.data.userGesture) {
         setAudioUnlocked(true);
+      }
+      if (event.data.avatarSettings) {
+        applyRuntimeSettings(event.data.avatarSettings);
       }
     };
     window.addEventListener("message", handleMessage);
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, []);
+  }, [applyRuntimeSettings]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (initialAvatarSettings) {
+      try {
+        const parsed = JSON.parse(initialAvatarSettings) as RuntimeAvatarSettings;
+        applyRuntimeSettings(parsed);
+      } catch {
+        // ignore malformed query payload
+      }
+    }
     const syncAvatarSettings = () => {
       try {
         const raw = window.localStorage.getItem("kagemusha-avatar-settings");
         if (!raw) return;
         const parsed = JSON.parse(raw) as RuntimeAvatarSettings;
-        setRuntimeAvatarSettings(parsed);
-        if (parsed.avatarName) {
-          setAvatarNameDisplay(parsed.avatarName);
-        }
-        const runtimeCompany = parsed.companyName || "影武者AI";
-        const runtimeName = parsed.avatarName || characterConfig.name;
-        const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。ご相談内容を整理しながらご案内します。`;
-        setSession((prev) => {
-          if (!prev.messages.length) return prev;
-          const first = prev.messages[0];
-          if (first.role !== "assistant") return prev;
-          if (prev.phase !== "collecting") return prev;
-          return {
-            ...prev,
-            messages: [
-              { ...first, content: openingMessage },
-              ...prev.messages.slice(1)
-            ]
-          };
-        });
-        if (parsed.modelUrl) {
-          setAvatarReady(false);
-          setAvatarModelUrl(parsed.modelUrl);
-        } else {
-          setAvatarModelUrl(avatarRuntimeConfig.modelUrl);
-        }
+        applyRuntimeSettings(parsed);
       } catch {
         // ignore local storage parse error
       }
@@ -236,7 +256,7 @@ export const ChatWindow = ({
       window.removeEventListener("kagemusha-avatar-settings-updated", syncAvatarSettings);
       window.removeEventListener("storage", handleStorage);
     };
-  }, []);
+  }, [applyRuntimeSettings, initialAvatarSettings]);
 
   useEffect(() => {
     if (isEmbedVisible) return;

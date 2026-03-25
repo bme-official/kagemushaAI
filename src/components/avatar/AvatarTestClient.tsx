@@ -256,10 +256,18 @@ export const AvatarTestClient = () => {
       gesture,
       voice: voiceState,
       expression,
-      lipSyncActive: voiceState !== "muted",
+      lipSyncActive: voiceState === "speaking",
       statusLabel: status
     });
   };
+
+  useEffect(() => {
+    setPreviewBehavior((prev) => ({
+      ...prev,
+      voice: voiceState,
+      lipSyncActive: voiceState === "speaking"
+    }));
+  }, [voiceState]);
 
   const addStatus = () => {
     const next = newStatusName.trim();

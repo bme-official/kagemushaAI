@@ -25,6 +25,7 @@ function kagemusha_ai_chat_shortcode($atts = array()) {
 			'button_label' => 'AIコンシェルジュ',
 			'modal_title' => "AIコンシェルジュ",
 			'iframe_path' => '/embed/chat',
+			'avatar_settings' => '',
 		),
 		$atts,
 		'kagemusha_ai_chat'
@@ -36,6 +37,7 @@ function kagemusha_ai_chat_shortcode($atts = array()) {
 	$button_label = esc_attr($atts['button_label']);
 	$modal_title = esc_attr($atts['modal_title']);
 	$iframe_path = esc_attr($atts['iframe_path']);
+	$avatar_settings = wp_kses_post($atts['avatar_settings']);
 	$app_url_attr = esc_attr($app_url);
 
 	$kagemusha_ai_chat_widget_config = array(
@@ -44,6 +46,7 @@ function kagemusha_ai_chat_shortcode($atts = array()) {
 		'button_label' => $button_label,
 		'modal_title' => $modal_title,
 		'iframe_path' => $iframe_path,
+		'avatar_settings' => $avatar_settings,
 	);
 
 	return '';
@@ -79,7 +82,7 @@ function kagemusha_ai_chat_render_footer_script() {
 
 	$config = $kagemusha_ai_chat_widget_config;
 	echo "\n<!-- kagemusha-ai-chat: script injected -->\n";
-	echo '<script data-kagemusha-ai-chat-widget="1" src="' . esc_url($config['script_src']) . '" data-app-url="' . esc_attr($config['app_url']) . '" data-button-label="' . esc_attr($config['button_label']) . '" data-modal-title="' . esc_attr($config['modal_title']) . '" data-iframe-path="' . esc_attr($config['iframe_path']) . '" defer></script>';
+	echo '<script data-kagemusha-ai-chat-widget="1" src="' . esc_url($config['script_src']) . '" data-app-url="' . esc_attr($config['app_url']) . '" data-button-label="' . esc_attr($config['button_label']) . '" data-modal-title="' . esc_attr($config['modal_title']) . '" data-iframe-path="' . esc_attr($config['iframe_path']) . '" data-avatar-settings="' . esc_attr($config['avatar_settings']) . '" defer></script>';
 	$kagemusha_ai_chat_widget_rendered = true;
 }
 
