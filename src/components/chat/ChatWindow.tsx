@@ -6,8 +6,6 @@ import { companyConfig } from "@/config/company.config";
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { uiConfig } from "@/config/ui.config";
 import { voiceConfig } from "@/config/voice.config";
-import { AvatarShell } from "@/components/avatar/AvatarShell";
-import { AvatarStatus } from "@/components/avatar/AvatarStatus";
 import { VRMCanvas } from "@/components/avatar/VRMCanvas";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { ConversationSummary } from "@/components/chat/ConversationSummary";
@@ -815,29 +813,6 @@ export const ChatWindow = ({
       style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}
       onPointerDown={unlockAudio}
     >
-      <div
-        style={{
-          padding: 12,
-          borderBottom: "1px solid #e2e8f0",
-          display: "flex",
-          gap: 8,
-          alignItems: "center"
-        }}
-      >
-        <AvatarShell
-          placeholderText={(
-            runtimeAvatarSettings.avatarName ||
-            avatarNameDisplay ||
-            characterConfig.avatar.placeholderText
-          )
-            .slice(0, 3)
-            .toUpperCase()}
-        />
-        <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
-          <strong style={{ fontSize: 14 }}>{avatarNameDisplay}</strong>
-          <AvatarStatus statusLabel={avatarBehavior.statusLabel} />
-        </div>
-      </div>
 
       {enableVoice ? (
         <div
@@ -955,6 +930,7 @@ export const ChatWindow = ({
           onSpeechDetectedChange={setIsSpeechDetected}
           onUserInteraction={unlockAudio}
           mode={viewMode === "voice" ? "overlay" : "inline"}
+          statusLabel={avatarBehavior.statusLabel}
         />
       ) : null}
 

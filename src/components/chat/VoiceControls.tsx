@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { voiceConfig } from "@/config/voice.config";
 import { MicIcon, SpeakerIcon } from "@/components/chat/VoiceIcons";
 
@@ -54,6 +54,7 @@ type VoiceControlsProps = {
   onSpeechDetectedChange?: (speaking: boolean) => void;
   onUserInteraction?: () => void;
   mode?: "overlay" | "inline";
+  statusLabel?: string;
 };
 
 export const VoiceControls = ({
@@ -66,7 +67,8 @@ export const VoiceControls = ({
   onListeningChange,
   onSpeechDetectedChange,
   onUserInteraction,
-  mode = "overlay"
+  mode = "overlay",
+  statusLabel = "idle"
 }: VoiceControlsProps) => {
   const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -238,6 +240,47 @@ export const VoiceControls = ({
 
   if (!voiceConfig.enabled) return null;
 
+  // ステータスごとのバー色とラベル色
+  const isListening = statusLabel === "listening...";
+  const isThinking = statusLabel === "thinking...";
+  const isSpeaking = statusLabel === "speaking...";
+
+  const barColor = isListening ? "#22c55e" : isSpeaking ? "#3b82f6" : "#94a3b8";
+  const labelColor = isListening ? "#16a34a" : isSpeaking ? "#2563eb" : "#94a3b8";
+
+  const getBarStyle = (idx: number): React.CSSProperties => {
+    if (isListening || isSpeaking) {
+      const heights = [8, 14, 10];
+      const duration = isListening ? 650 : 580;
+      const stagger = isListening ? 90 : 75;
+      return {
+        width: 4,
+        borderRadius: 999,
+        height: heights[idx],
+        background: barColor,
+        transformOrigin: "bottom center",
+        animation: `kagemushaBarBounce ${duration}ms ease-in-out ${idx * stagger}ms infinite alternate`
+      };
+    }
+    if (isThinking) {
+      return {
+        width: 4,
+        borderRadius: 999,
+        height: 7,
+        background: "#94a3b8",
+        animation: `kagemushaBarThink 1.4s ease-in-out ${idx * 380}ms infinite`
+      };
+    }
+    // idle
+    return {
+      width: 4,
+      borderRadius: 999,
+      height: [8, 12, 9][idx],
+      background: "#cbd5e1",
+      transition: "all 200ms ease"
+    };
+  };
+
   return (
     <div
       style={{
@@ -246,52 +289,53 @@ export const VoiceControls = ({
         right: mode === "overlay" ? 12 : undefined,
         bottom: mode === "overlay" ? 12 : undefined,
         zIndex: mode === "overlay" ? 20 : undefined,
-        padding: mode === "inline" ? "10px 12px" : "8px 10px",
+        padding: mode === "inline" ? "10px 12px" : "8px 12px",
         borderTop: mode === "inline" ? "1px solid #e2e8f0" : undefined,
-        borderRadius: mode === "overlay" ? 10 : 0,
-        background: mode === "overlay" ? "rgba(255,255,255,0.88)" : "#ffffff",
-        backdropFilter: mode === "overlay" ? "blur(4px)" : undefined,
-        display: "flex",
+        borderRadius: mode === "overlay" ? 12 : 0,
+        background: mode === "overlay" ? "rgba(255,255,255,0.92)" : "#ffffff",
+        backdropFilter: mode === "overlay" ? "blur(6px)" : undefined,
+        display: "grid",
+        gridTemplateColumns: "1fr auto 1fr",
         alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10
+        gap: 8
       }}
     >
+      {/* 左：ステータスラベル */}
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: labelColor,
+          letterSpacing: "0.02em",
+          transition: "color 200ms ease",
+          whiteSpace: "nowrap"
+        }}
+      >
+        {statusLabel}
+      </span>
+
+      {/* 中央：3本バー */}
       <div
         style={{
           display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          minWidth: 28,
+          alignItems: "flex-end",
+          justifyContent: "center",
+          gap: 5,
           height: 20
         }}
       >
-        {[0, 1, 2].map((idx) => {
-          const baseHeight = [8, 14, 10][idx];
-          const animatedHeight = [14, 20, 16][idx];
-          return (
-            <span
-              key={idx}
-              style={{
-                width: 4,
-                borderRadius: 999,
-                height: isSpeechDetected ? animatedHeight : baseHeight,
-                background: isSpeechDetected ? "#22c55e" : "#94a3b8",
-                transition: "all 120ms ease",
-                animation: isSpeechDetected
-                  ? `kagemushaAudioBars 650ms ease-in-out ${idx * 90}ms infinite alternate`
-                  : "none"
-              }}
-            />
-          );
-        })}
+        {[0, 1, 2].map((idx) => (
+          <span key={idx} style={getBarStyle(idx)} />
+        ))}
       </div>
+
+      {/* 右：マイク＋スピーカーボタン */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 10,
-          marginLeft: "auto"
+          gap: 8,
+          justifyContent: "flex-end"
         }}
       >
         <button
@@ -303,8 +347,8 @@ export const VoiceControls = ({
           disabled={disabled || !voiceConfig.sttEnabled}
           aria-label="音声入力の切り替え"
           style={{
-            width: 42,
-            height: 42,
+            width: 40,
+            height: 40,
             borderRadius: 999,
             border: "1px solid #cbd5e1",
             background: micEnabled ? "#0f172a" : "#fee2e2",
@@ -325,8 +369,8 @@ export const VoiceControls = ({
           disabled={disabled || !voiceConfig.ttsEnabled}
           aria-label="読み上げの切り替え"
           style={{
-            width: 42,
-            height: 42,
+            width: 40,
+            height: 40,
             borderRadius: 999,
             border: "1px solid #cbd5e1",
             background: ttsEnabled ? "#0f172a" : "#fee2e2",
@@ -339,16 +383,25 @@ export const VoiceControls = ({
           <SpeakerIcon muted={!ttsEnabled} />
         </button>
       </div>
-      <style>
-        {`@keyframes kagemushaAudioBars{from{transform:translateY(0);opacity:.65}to{transform:translateY(-3px);opacity:1}}`}
-      </style>
+
+      <style>{`
+        @keyframes kagemushaBarBounce {
+          from { transform: scaleY(1); opacity: 0.7; }
+          to   { transform: scaleY(1.9); opacity: 1; }
+        }
+        @keyframes kagemushaBarThink {
+          0%, 100% { opacity: 0.25; background: #e2e8f0; }
+          50%       { opacity: 1;    background: #64748b; }
+        }
+      `}</style>
+
       {unsupportedMessage ? (
         <span
           style={{
             position: "absolute",
             left: 0,
             right: 0,
-            bottom: 50,
+            bottom: 54,
             fontSize: 12,
             color: "#b45309",
             textAlign: "center"
