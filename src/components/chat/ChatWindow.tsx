@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { characterConfig } from "@/config/character.config";
+import { companyConfig } from "@/config/company.config";
 import { avatarRuntimeConfig } from "@/config/avatar.runtime.config";
 import { uiConfig } from "@/config/ui.config";
 import { voiceConfig } from "@/config/voice.config";
@@ -78,6 +79,17 @@ const applyIdentityMention = (text: string, settings: RuntimeAvatarSettings) => 
     .some((token) => text.includes(token as string));
   if (hasIdentityMention) return text;
   return `${serviceMentionPrefix(settings)}${text}`;
+};
+
+const normalizeAssistantText = (text: string, settings: RuntimeAvatarSettings) => {
+  let next = text;
+  if (settings.companyName) {
+    next = next.replaceAll(companyConfig.name, settings.companyName);
+  }
+  if (settings.avatarName) {
+    next = next.replaceAll(characterConfig.name, settings.avatarName);
+  }
+  return applyIdentityMention(next, settings);
 };
 
 type ChatWindowProps = {
@@ -217,9 +229,18 @@ export const ChatWindow = ({
   }, []);
 
   const messages = useMemo(() => session.messages, [session.messages]);
+  const displayMessages = useMemo(
+    () =>
+      messages.map((message) =>
+        message.role === "assistant"
+          ? { ...message, content: normalizeAssistantText(message.content, runtimeAvatarSettings) }
+          : message
+      ),
+    [messages, runtimeAvatarSettings]
+  );
   const latestAssistant = useMemo(
-    () => [...messages].reverse().find((msg) => msg.role === "assistant"),
-    [messages]
+    () => [...displayMessages].reverse().find((msg) => msg.role === "assistant"),
+    [displayMessages]
   );
   const canRenderVrm =
     avatarRuntimeConfig.enabled && Boolean(avatarModelUrl) && avatarModelUrl.toLowerCase().endsWith(".vrm");
@@ -263,9 +284,6 @@ export const ChatWindow = ({
             // ignore primer error
           }
         }
-        window.setTimeout(() => {
-          trySpeakOpeningGreeting();
-        }, 0);
       }
       const parsed = parseRuntimeSettings(event.data.avatarSettings);
       if (parsed) {
@@ -276,7 +294,7 @@ export const ChatWindow = ({
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [applyRuntimeSettings, parseRuntimeSettings, trySpeakOpeningGreeting]);
+  }, [applyRuntimeSettings, parseRuntimeSettings]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -604,6 +622,7 @@ export const ChatWindow = ({
   }, [isSpeechDetected]);
 
   const handleVoiceTranscript = (text: string) => {
+    if (isSpeaking && !isSpeechDetected) return;
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
@@ -742,7 +761,7 @@ export const ChatWindow = ({
       if (lastMessage?.role === "assistant") {
         prefixedMessages[prefixedMessages.length - 1] = {
           ...lastMessage,
-          content: applyIdentityMention(lastMessage.content, runtimeAvatarSettings)
+          content: normalizeAssistantText(lastMessage.content, runtimeAvatarSettings)
         };
       }
       setSession({
@@ -837,7 +856,15 @@ export const ChatWindow = ({
           alignItems: "center"
         }}
       >
-        <AvatarShell />
+        <AvatarShell
+          placeholderText={(
+            runtimeAvatarSettings.avatarName ||
+            avatarNameDisplay ||
+            characterConfig.avatar.placeholderText
+          )
+            .slice(0, 3)
+            .toUpperCase()}
+        />
         <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.2 }}>
           <strong style={{ fontSize: 14 }}>{avatarNameDisplay}</strong>
           <AvatarStatus statusLabel={avatarBehavior.statusLabel} />
@@ -937,7 +964,7 @@ export const ChatWindow = ({
             gap: 8
           }}
         >
-          {messages.map((message) => (
+          {displayMessages.map((message) => (
             <MessageBubble key={message.id} message={message} />
           ))}
           {session.phase === "confirming" && session.summaryDraft ? (

@@ -1,6 +1,10 @@
 import { characterConfig } from "@/config/character.config";
 
-export const AvatarShell = () => {
+type AvatarShellProps = {
+  placeholderText?: string;
+};
+
+export const AvatarShell = ({ placeholderText }: AvatarShellProps) => {
   return (
     <div
       aria-label="avatar-shell"
@@ -16,7 +20,7 @@ export const AvatarShell = () => {
         fontWeight: 700
       }}
     >
-      {characterConfig.avatar.placeholderText}
+      {placeholderText || characterConfig.avatar.placeholderText}
     </div>
   );
 };

@@ -86,6 +86,34 @@ const buildFallbackReply = (
   return `ありがとうございます。内容を整理しました。${nextFieldRequest ? `${nextFieldRequest.label}を続けて入力してください。` : "送信内容の確認へ進みます。"}`;
 };
 
+const applyAvatarIdentityToReply = (
+  text: string,
+  avatarSettings?: ChatApiRequest["avatarSettings"]
+) => {
+  if (!avatarSettings) return text;
+  const companyName = avatarSettings.companyName?.trim();
+  const avatarName = avatarSettings.avatarName?.trim();
+  const serviceName = avatarSettings.services?.find((item) => item.name?.trim())?.name?.trim();
+
+  let next = text;
+  if (companyName) {
+    next = next.replaceAll("B'Me合同会社", companyName);
+  }
+  if (avatarName) {
+    next = next.replaceAll(characterConfig.name, avatarName);
+  }
+  const hasMention = [companyName, avatarName, serviceName]
+    .filter(Boolean)
+    .some((token) => next.includes(token as string));
+  if (!hasMention) {
+    const tokens = [avatarName, companyName, serviceName].filter(Boolean);
+    if (tokens.length) {
+      next = `【${tokens.join(" / ")}】 ${next}`;
+    }
+  }
+  return next;
+};
+
 export async function POST(request: NextRequest) {
   const body = (await request.json()) as ChatApiRequest;
   const session = body.session;
@@ -181,9 +209,10 @@ export async function POST(request: NextRequest) {
     workingSession.phase = "collecting";
   }
 
-  const assistantText =
+  const assistantTextRaw =
     aiResult?.reply ??
     buildFallbackReply(userText, workingSession.collectedFields, nextFieldRequest);
+  const assistantText = applyAvatarIdentityToReply(assistantTextRaw, body.avatarSettings);
 
   let finalNextFieldRequest = nextFieldRequest;
   if (workingSession.phase === "confirming") {
