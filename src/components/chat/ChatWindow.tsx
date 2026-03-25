@@ -199,7 +199,6 @@ export const ChatWindow = ({
     statusLabel: "ご相談受付中"
   });
   const lastSpokenMessageIdRef = useRef<string | null>(null);
-  const hasSpokenOpeningRef = useRef(false);
   const assistantLipSyncTimerRef = useRef<number | null>(null);
   const apiAudioRef = useRef<HTMLAudioElement | null>(null);
   // 世代カウンター: 古い TTS 呼び出しが API フォールバックを起動するのを防ぐ
@@ -226,7 +225,9 @@ export const ChatWindow = ({
     }
     const runtimeCompany = parsed.companyName || "影武者AI";
     const runtimeName = parsed.avatarName || characterConfig.name;
-    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。ご相談内容を整理しながらご案内します。`;
+    const primaryService = parsed.services?.find((s) => s.name)?.name;
+    const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
+    const openingMessage = `こんにちは、${runtimeCompany}のお問い合わせサポート担当 ${runtimeName} です。${serviceSuffix}ご相談内容を整理しながらご案内します。`;
     setSession((prev) => {
       if (!prev.messages.length) return prev;
       const first = prev.messages[0];
@@ -403,14 +404,6 @@ export const ChatWindow = ({
     [runtimeAvatarSettings.statusMappings]
   );
 
-  const getOpeningGreetingText = useCallback(() => {
-    const companyName = runtimeAvatarSettings.companyName || "影武者AI";
-    const name = runtimeAvatarSettings.avatarName || characterConfig.name;
-    const primaryService = runtimeAvatarSettings.services?.find((service) => service.name)?.name;
-    const serviceSuffix = primaryService ? `主なご案内サービスは「${primaryService}」です。` : "";
-    return `こんにちは、${companyName}のお問い合わせサポート担当 ${name} です。${serviceSuffix}ご相談内容を整理しながらご案内します。`;
-  }, [runtimeAvatarSettings.avatarName, runtimeAvatarSettings.companyName, runtimeAvatarSettings.services]);
-
   const applyConfiguredVoice = useCallback((utterance: SpeechSynthesisUtterance) => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     const voices = window.speechSynthesis.getVoices();
@@ -560,57 +553,11 @@ export const ChatWindow = ({
     [applyConfiguredVoice, speakViaTtsApi]
   );
 
-  const trySpeakOpeningGreeting = useCallback(() => {
-    if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) return;
-    if (!isEmbedVisible) return;
-    if ((canRenderVrm && !avatarReady) || hasSpokenOpeningRef.current) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    // 既に再生中・キューに入っている場合はキャンセルしない
-    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) return;
-    speakWithFallback(getOpeningGreetingText(), {
-      onStart: () => {
-        setIsSpeaking(true);
-        pulseAssistantLipSync();
-        hasSpokenOpeningRef.current = true;
-      },
-      onBoundary: () => pulseAssistantLipSync(),
-      onEnd: () => {
-        setIsSpeaking(false);
-        setAssistantLipSyncActive(false);
-      },
-      onError: () => {
-        setIsSpeaking(false);
-        setAssistantLipSyncActive(false);
-      },
-      markAsSpokenId: latestAssistant?.id
-    });
-  }, [
-    avatarReady,
-    canRenderVrm,
-    enableVoice,
-    getOpeningGreetingText,
-    isEmbedVisible,
-    latestAssistant,
-    pulseAssistantLipSync,
-    speakWithFallback,
-    ttsEnabled
-  ]);
-
   const unlockAudio = useCallback(() => {
     if (!audioUnlocked) {
       setAudioUnlocked(true);
     }
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      try {
-        const primer = new SpeechSynthesisUtterance(" ");
-        primer.volume = 0;
-        window.speechSynthesis.speak(primer);
-      } catch {
-        // ignore primer error
-      }
-    }
-    trySpeakOpeningGreeting();
-  }, [audioUnlocked, trySpeakOpeningGreeting]);
+  }, [audioUnlocked]);
 
   const handleStartVoiceChat = useCallback(() => {
     setTtsEnabled(true);
@@ -618,17 +565,13 @@ export const ChatWindow = ({
       setMicEnabled(true);
     }
     setAudioUnlocked(true);
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (!latestAssistant?.content) return;
     // speakWithFallback はメインパスで speak() を同期的に呼ぶためユーザージェスチャーが保持される
-    speakWithFallback(getOpeningGreetingText(), {
+    speakWithFallback(latestAssistant.content, {
       onStart: () => {
         setNeedsAudioStart(false);
         setIsSpeaking(true);
         pulseAssistantLipSync();
-        hasSpokenOpeningRef.current = true;
-        if (latestAssistant) {
-          lastSpokenMessageIdRef.current = latestAssistant.id;
-        }
       },
       onBoundary: () => pulseAssistantLipSync(),
       onEnd: () => {
@@ -640,26 +583,27 @@ export const ChatWindow = ({
         setAssistantLipSyncActive(false);
         setNeedsAudioStart(true);
       },
-      markAsSpokenId: latestAssistant?.id
+      markAsSpokenId: latestAssistant.id
     });
   }, [
-    getOpeningGreetingText,
     latestAssistant,
     pulseAssistantLipSync,
     speakWithFallback
   ]);
 
+  // アシスタントの最新メッセージを1回だけ読み上げる（表示テキストと同一のlatestAssistant.contentを使用）
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled || !audioUnlocked) return;
     if (!isEmbedVisible) return;
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
+    // 既に読み上げ済みとしてマーク（重複防止）
+    lastSpokenMessageIdRef.current = latestAssistant.id;
 
     speakWithFallback(latestAssistant.content, {
       onStart: () => {
         setIsSpeaking(true);
+        setNeedsAudioStart(false);
         pulseAssistantLipSync();
       },
       onBoundary: () => pulseAssistantLipSync(),
@@ -670,6 +614,8 @@ export const ChatWindow = ({
       onError: () => {
         setIsSpeaking(false);
         setAssistantLipSyncActive(false);
+        // 失敗時は再試行できるようにリセット
+        lastSpokenMessageIdRef.current = null;
       },
       markAsSpokenId: latestAssistant.id
     });
@@ -679,26 +625,6 @@ export const ChatWindow = ({
     if (!initialAudioUnlocked || audioUnlocked) return;
     setAudioUnlocked(true);
   }, [audioUnlocked, initialAudioUnlocked]);
-
-  useEffect(() => {
-    trySpeakOpeningGreeting();
-  }, [trySpeakOpeningGreeting]);
-
-  useEffect(() => {
-    if (!enableVoice || !ttsEnabled || !isEmbedVisible || !avatarReady || hasSpokenOpeningRef.current) return;
-    let attempt = 0;
-    let retryTimer: number | null = null;
-    const tick = () => {
-      if (hasSpokenOpeningRef.current || attempt >= 6) return;
-      attempt += 1;
-      trySpeakOpeningGreeting();
-      retryTimer = window.setTimeout(tick, 700);
-    };
-    tick();
-    return () => {
-      if (retryTimer !== null) window.clearTimeout(retryTimer);
-    };
-  }, [avatarReady, enableVoice, isEmbedVisible, trySpeakOpeningGreeting, ttsEnabled]);
 
   useEffect(() => {
     if (!enableVoice || !voiceConfig.enabled || !ttsEnabled) {
@@ -711,25 +637,21 @@ export const ChatWindow = ({
     }
   }, [enableVoice, stopApiAudio, ttsEnabled]);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-    const handleVoicesChanged = () => {
-      trySpeakOpeningGreeting();
-    };
-    window.speechSynthesis.addEventListener("voiceschanged", handleVoicesChanged);
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", handleVoicesChanged);
-    };
-  }, [trySpeakOpeningGreeting]);
-
+  // ユーザーが話し始めたら即座にTTSを中断してlistening状態に切り替える
   useEffect(() => {
     if (!isSpeechDetected) return;
+    stopApiAudio();
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
     if (assistantLipSyncTimerRef.current !== null) {
       window.clearTimeout(assistantLipSyncTimerRef.current);
       assistantLipSyncTimerRef.current = null;
     }
     setAssistantLipSyncActive(false);
-  }, [isSpeechDetected]);
+    // 読み上げがキャンセルされたので次回の新しいメッセージは再び読み上げる
+  }, [isSpeechDetected, stopApiAudio]);
 
   const handleVoiceTranscript = (text: string) => {
     if (isSpeaking && !isSpeechDetected) return;
