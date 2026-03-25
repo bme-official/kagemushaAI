@@ -165,6 +165,28 @@ const buildWidgetScript = (baseAppUrl: string) => {
     );
   };
 
+  // モーダル開放中のページスクロールを禁止（iOS は scrollY を保存して position:fixed で対処）
+  let savedScrollY = 0;
+  const lockBodyScroll = () => {
+    savedScrollY = window.scrollY;
+    document.body.style.overflow = "hidden";
+    // iOS Safari: overflow:hidden だけでは慣性スクロールが止まらないため position:fixed を使用
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      document.body.style.position = "fixed";
+      document.body.style.top = "-" + savedScrollY + "px";
+      document.body.style.width = "100%";
+    }
+  };
+  const unlockBodyScroll = () => {
+    document.body.style.overflow = "";
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      document.body.style.position = "";
+      document.body.style.top = "";
+      document.body.style.width = "";
+      window.scrollTo(0, savedScrollY);
+    }
+  };
+
   const open = () => {
     // Keep iframe open action on the direct click path.
     // Waiting network here can drop user-gesture context and break autoplay/TTS on mobile browsers.
@@ -181,12 +203,14 @@ const buildWidgetScript = (baseAppUrl: string) => {
     }
     backdrop.classList.add("open");
     backdrop.setAttribute("aria-hidden", "false");
+    lockBodyScroll();
   };
 
   const close = () => {
     backdrop.classList.remove("open");
     backdrop.setAttribute("aria-hidden", "true");
     notifyIframeVisibility(false, false);
+    unlockBodyScroll();
   };
 
   button.addEventListener("click", open);

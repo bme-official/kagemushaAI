@@ -486,6 +486,9 @@ export const ChatWindow = ({
         }
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        // iOS Safari で inline 再生するために必須
+        audio.setAttribute("playsinline", "");
+        audio.setAttribute("webkit-playsinline", "");
         apiAudioRef.current = audio;
         let lipSyncTimer: number | null = null;
         audio.onplay = () => {
@@ -536,6 +539,18 @@ export const ChatWindow = ({
   const unlockAudio = useCallback(() => {
     if (!audioUnlocked) {
       setAudioUnlocked(true);
+      // iOS Safari: 無音の Audio を再生してオーディオコンテキストをユーザージェスチャーで解放する
+      try {
+        const silent = new Audio();
+        silent.setAttribute("playsinline", "");
+        // 極小の無音 mp3（最短 Base64）
+        silent.src =
+          "data:audio/mpeg;base64,SUQzBAAAAAAA/+MYxAAAAANIAAAAAExBTUUzLjk4LjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/+MYxDsAAANIAAAAAP/////////////////////////////////////////////////////////////////AADwP/////////////////////////////////////////////////////////////////A==";
+        silent.volume = 0;
+        silent.play().catch(() => {});
+      } catch {
+        // ignore
+      }
     }
   }, [audioUnlocked]);
 

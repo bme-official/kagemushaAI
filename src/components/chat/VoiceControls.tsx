@@ -139,11 +139,13 @@ export const VoiceControls = ({
       setUnsupportedMessage("このブラウザは音声入力に対応していません。");
       return;
     }
+    // iOS Safari は continuous:true が不安定なため無効化し、onend で再起動する
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const recognition = new Recognition();
     recognition.lang = voiceConfig.locale;
     recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別
     recognition.maxAlternatives = 1;
-    recognition.continuous = true;
+    recognition.continuous = !isIOS;
     recognition.onstart = () => {
       callbacksRef.current.onListeningChange?.(true);
     };
@@ -199,9 +201,11 @@ export const VoiceControls = ({
       callbacksRef.current.onSpeechDetectedChange?.(false);
       if (shouldKeepListeningRef.current && !disabled) {
         clearRestartTimer();
+        // iOS は onend が頻繁に発火するため少し余裕を持たせる
+        const restartDelay = /iphone|ipad|ipod/i.test(navigator.userAgent) ? 300 : 80;
         restartTimeoutRef.current = window.setTimeout(() => {
           startListening();
-        }, 80);
+        }, restartDelay);
       }
     };
 

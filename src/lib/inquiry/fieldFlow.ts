@@ -34,6 +34,19 @@ export const getNextFieldRequest = (
     }
   }
 
+  // AI が会話文脈から適切なフィールドを示唆している場合は、条件チェックより先に優先する。
+  // これにより「打ち合わせしたいな」など inferredIntent が取れない発話でも
+  // AI が name を指定すれば入力欄が必ず表示される。
+  const aiField = context?.aiSuggestedField;
+  if (
+    aiField &&
+    aiField.fieldName !== "confirmSubmit" &&
+    !collected[aiField.fieldName as keyof CollectedContactFields] &&
+    !(isVoice && VOICE_ONLY_FIELDS.has(aiField.fieldName))
+  ) {
+    return aiField;
+  }
+
   // 問い合わせ本文と意図が揃ってから連絡先情報を収集する。
   // 既にひとつでも連絡先フィールドが収集済みの場合は inferredIntent・shouldCollectContact
   // に関わらず継続する（フィールド送信ターンで条件が外れても途切れないようにする）。
@@ -48,18 +61,6 @@ export const getNextFieldRequest = (
       context?.shouldCollectContact
     );
   if (!canAskIdentityFields) return null;
-
-  // AI が会話文脈から適切なフィールドを示唆している場合はそれを優先する。
-  // ただし既に収集済みのフィールドは除外し、voiceOnly フィールドはボイスモードでスキップ。
-  const aiField = context?.aiSuggestedField;
-  if (
-    aiField &&
-    aiField.fieldName !== "confirmSubmit" &&
-    !collected[aiField.fieldName as keyof CollectedContactFields] &&
-    !(isVoice && VOICE_ONLY_FIELDS.has(aiField.fieldName))
-  ) {
-    return aiField;
-  }
 
   // AI 示唆がない・使えない場合は固定順序で次の未収集フィールドを返す。
   for (const field of inquiryConfig.fieldCollection) {
