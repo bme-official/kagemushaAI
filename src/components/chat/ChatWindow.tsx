@@ -593,12 +593,12 @@ export const ChatWindow = ({
 
     // 表示ラベルは4状態のみ（感情ステータスは非表示・内部適用のみ）
     const fallbackStatusLabel = isSpeechDetected
-      ? "音声を聞き取り中..."
+      ? "listening..."
       : isSpeaking
-        ? "回答を読み上げ中..."
+        ? "speaking..."
         : isLoading
-          ? "入力内容を整理中..."
-          : "ご相談受付中";
+          ? "thinking..."
+          : "idle";
 
     const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"
