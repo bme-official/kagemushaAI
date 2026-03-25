@@ -80,7 +80,7 @@ const buildWidgetScript = (baseAppUrl: string) => {
 
   const iframe = document.createElement("iframe");
   iframe.className = "kagemusha-chat-iframe";
-  iframe.allow = "microphone *; autoplay *";
+  iframe.allow = "microphone; autoplay";
   iframe.referrerPolicy = "strict-origin-when-cross-origin";
   const bridgeFrame = document.createElement("iframe");
   bridgeFrame.style.width = "0";
@@ -165,8 +165,10 @@ const buildWidgetScript = (baseAppUrl: string) => {
     );
   };
 
-  const open = async () => {
-    await requestRemoteSettings();
+  const open = () => {
+    // Keep iframe open action on the direct click path.
+    // Waiting network here can drop user-gesture context and break autoplay/TTS on mobile browsers.
+    requestRemoteSettings();
     if (!iframe.src) {
       const source = encodeURIComponent(window.location.href);
       const settings = readAvatarSettings();
