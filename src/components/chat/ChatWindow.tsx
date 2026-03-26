@@ -212,6 +212,7 @@ export const ChatWindow = ({
   // 非 iOS は useEffect で true に設定し自動起動する。
   const [micEnabled, setMicEnabled] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isVoiceProcessing, setIsVoiceProcessing] = useState(false); // STT処理中（listening→thinking橋渡し）
   const [assistantLipSyncActive, setAssistantLipSyncActive] = useState(false);
   const [isEmbedVisible, setIsEmbedVisible] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
@@ -436,7 +437,12 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (isEmbedVisible) return;
+    // モーダルを閉じたらマイク・スピーカー・TTS をすべて停止する
+    setMicEnabled(false);
+    setSpeakerMuted(true);
+    speakerMutedRef.current = true;
     setIsSpeaking(false);
+    setIsVoiceProcessing(false);
     setIsSpeechDetected(false);
     setAssistantLipSyncActive(false);
     stopApiAudio();
@@ -672,6 +678,8 @@ export const ChatWindow = ({
     if (!isEmbedVisible) return;
     if (!latestAssistant) return;
     if (lastSpokenMessageIdRef.current === latestAssistant.id) return;
+    // アバター表示が完了するまで挨拶の読み上げを待機する
+    if (avatarLoading && canRenderVrm) return;
     // 既に読み上げ済みとしてマーク（重複防止）
     lastSpokenMessageIdRef.current = latestAssistant.id;
 
@@ -697,7 +705,7 @@ export const ChatWindow = ({
       },
       markAsSpokenId: latestAssistant.id
     });
-  }, [audioUnlocked, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, speakWithFallback, ttsEnabled]);
+  }, [audioUnlocked, avatarLoading, canRenderVrm, enableVoice, isEmbedVisible, latestAssistant, pulseAssistantLipSync, speakWithFallback, ttsEnabled]);
 
   useEffect(() => {
     if (!initialAudioUnlocked || audioUnlocked) return;
@@ -744,6 +752,7 @@ export const ChatWindow = ({
 
   const handleVoiceTranscript = (text: string) => {
     // 読み上げ中でも文字起こし結果は必ず処理する。TTS は即座に停止して聞き取り優先。
+    setIsVoiceProcessing(false); // STT完了 → API処理中（isLoading）に引き継ぐ
     stopApiAudio();
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
@@ -783,7 +792,7 @@ export const ChatWindow = ({
 
     const fallbackGesture: AvatarBehaviorState["gesture"] = isSpeechDetected
       ? "listening"
-      : isLoading
+      : isLoading || isVoiceProcessing
         ? "thinking"
         : isSpeaking
           ? fallbackExpression === "serious"
@@ -794,13 +803,13 @@ export const ChatWindow = ({
             : "idle";
 
     // 表示ラベルは4状態のみ（感情ステータスは非表示・内部適用のみ）
-    // マイクがONでも声を検知していない間は idle を表示し、実際に話し始めたら listening に切り替える
+    // 発話中 → listening, STT処理中またはAPI待ち → thinking, TTS再生中 → speaking, それ以外 → idle
     const fallbackStatusLabel = isSpeechDetected
       ? "listening..."
-      : isSpeaking
-        ? "speaking..."
-        : isLoading
-          ? "thinking..."
+      : isLoading || isVoiceProcessing
+        ? "thinking..."
+        : isSpeaking
+          ? "speaking..."
           : "idle";
 
     const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
@@ -855,6 +864,7 @@ export const ChatWindow = ({
     isLoading,
     isSpeaking,
     isSpeechDetected,
+    isVoiceProcessing,
     messages,
     resolveStatusMapping,
     session.urgency
@@ -1179,6 +1189,7 @@ export const ChatWindow = ({
           onUserInteraction={unlockAudio}
           mode={viewMode === "voice" ? "overlay" : "inline"}
           statusLabel={avatarBehavior.statusLabel}
+          onSpeechProcessingChange={setIsVoiceProcessing}
         />
       ) : null}
 

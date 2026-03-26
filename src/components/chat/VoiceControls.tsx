@@ -13,6 +13,8 @@ type VoiceControlsProps = {
   onToggleTts: (enabled: boolean) => void;
   onListeningChange?: (listening: boolean) => void;
   onSpeechDetectedChange?: (speaking: boolean) => void;
+  /** 発話終了後STT送信中に呼ばれる（listening→thinkingの即時切り替え用） */
+  onSpeechProcessingChange?: (processing: boolean) => void;
   onUserInteraction?: () => void;
   mode?: "overlay" | "inline";
   statusLabel?: string;
@@ -20,8 +22,10 @@ type VoiceControlsProps = {
   isTtsSpeaking?: boolean;
   /** 無音判定までの時間 (ms, default: 1200) */
   vadSilenceDurationMs?: number;
-  /** 発話判定RMS閾値 (default: 0.018) */
+  /** 発話判定RMS閾値 (default: 0.025) */
   vadThreshold?: number;
+  /** 発話確定に必要な連続フレーム数 (default: 4 = 約67ms) */
+  vadConfirmFrames?: number;
 };
 
 /** MediaRecorder でサポートされている MIME type を選ぶ */
@@ -46,18 +50,20 @@ export const VoiceControls = ({
   onToggleTts,
   onListeningChange,
   onSpeechDetectedChange,
+  onSpeechProcessingChange,
   onUserInteraction,
   mode = "overlay",
   statusLabel = "idle",
   vadSilenceDurationMs = 1200,
-  vadThreshold = 0.018
+  vadThreshold = 0.025,
+  vadConfirmFrames = 4
 }: VoiceControlsProps) => {
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
 
   // コールバックを ref で保持し、stale closure を防ぐ
-  const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic });
+  const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange, onSpeechProcessingChange, onToggleMic });
   useEffect(() => {
-    callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic };
+    callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange, onSpeechProcessingChange, onToggleMic };
   });
 
   const micEnabledRef = useRef(micEnabled);
@@ -75,6 +81,7 @@ export const VoiceControls = ({
   const silenceTimerRef = useRef<number | null>(null);
   const vadRafRef = useRef<number | null>(null);
   const isSubmittingRef = useRef(false);
+  const speechConfirmCountRef = useRef(0); // 連続してthreshold超えたフレーム数（雑音除去）
 
   const clearSilenceTimer = useCallback(() => {
     if (silenceTimerRef.current !== null) {
@@ -91,7 +98,7 @@ export const VoiceControls = ({
   }, []);
 
   /** 録音チャンクを Whisper に送信してトランスクリプトを取得 */
-  const submitAudio = useCallback(async (chunks: Blob[], mimeType: string) => {
+  const submitAudio = useCallback(async (chunks: Blob[], mimeType: string): Promise<void> => {
     if (chunks.length === 0 || isSubmittingRef.current) return;
     isSubmittingRef.current = true;
     try {
@@ -114,10 +121,13 @@ export const VoiceControls = ({
     }
   }, []);
 
-  /** 発話が終わったとき (無音1.2秒後) に呼ばれる */
+  /** 発話が終わったとき (無音後) に呼ばれる */
   const onSpeechEnd = useCallback(() => {
     speechActiveRef.current = false;
+    speechConfirmCountRef.current = 0;
     callbacksRef.current.onSpeechDetectedChange?.(false);
+    // STT送信開始を通知 → listening から thinking へ即時切り替え
+    callbacksRef.current.onSpeechProcessingChange?.(true);
 
     const recorder = recorderRef.current;
     if (recorder && recorder.state === "recording") {
@@ -125,9 +135,13 @@ export const VoiceControls = ({
       recorder.onstop = () => {
         const captured = [...chunksRef.current];
         chunksRef.current = [];
-        submitAudio(captured, mimeType);
+        submitAudio(captured, mimeType).finally(() => {
+          callbacksRef.current.onSpeechProcessingChange?.(false);
+        });
       };
       recorder.stop();
+    } else {
+      callbacksRef.current.onSpeechProcessingChange?.(false);
     }
   }, [submitAudio]);
 
@@ -152,9 +166,11 @@ export const VoiceControls = ({
 
       const recorder = recorderRef.current;
       if (rms > vadThreshold) {
-        // 発話中
+        // 発話候補: 連続フレーム数をカウント
+        speechConfirmCountRef.current++;
         clearSilenceTimer();
-        if (!speechActiveRef.current) {
+        if (!speechActiveRef.current && speechConfirmCountRef.current >= vadConfirmFrames) {
+          // N フレーム連続してthresholdを超えた場合のみ発話開始とみなす（雑音を除外）
           speechActiveRef.current = true;
           callbacksRef.current.onSpeechDetectedChange?.(true);
           // 新規録音セッション開始
@@ -162,20 +178,26 @@ export const VoiceControls = ({
           if (recorder && recorder.state === "inactive") {
             try { recorder.start(); } catch { /* ignore */ }
           }
+        } else if (speechActiveRef.current) {
+          // 既に発話中なら何もしない
         }
       } else if (speechActiveRef.current && silenceTimerRef.current === null) {
         // 無音開始 → タイマーセット
+        speechConfirmCountRef.current = 0;
         silenceTimerRef.current = window.setTimeout(() => {
           silenceTimerRef.current = null;
           onSpeechEnd();
         }, vadSilenceDurationMs);
+      } else if (!speechActiveRef.current) {
+        // 発話開始前の無音 → 確認カウントをリセット
+        speechConfirmCountRef.current = 0;
       }
 
       vadRafRef.current = requestAnimationFrame(loop);
     };
 
     vadRafRef.current = requestAnimationFrame(loop);
-  }, [vadThreshold, vadSilenceDurationMs, clearSilenceTimer, onSpeechEnd]);
+  }, [vadThreshold, vadSilenceDurationMs, vadConfirmFrames, clearSilenceTimer, onSpeechEnd]);
 
   /** マイクストリームを取得して AudioPipeline を構築 */
   const startPipeline = useCallback(async () => {
