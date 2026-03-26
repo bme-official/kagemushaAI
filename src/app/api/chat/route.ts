@@ -340,7 +340,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const MEETING_INTENTS = ["日程調整", "打ち合わせ希望"];
+  const MEETING_INTENTS = ["日程調整", "打ち合わせ", "ミーティング", "商談", "面談"];
   const isMeetingIntent = MEETING_INTENTS.some(
     (intent) => workingSession.inferredIntent?.includes(intent)
   );
@@ -349,7 +349,7 @@ export async function POST(request: NextRequest) {
     isMeetingIntent &&
     userText &&
     !workingSession.collectedFields.deadline &&
-    /(今日|明日|あした|来週|再来週|午前|午後|夕方|夜|朝|\d{1,2}時|\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|\d{1,2}日)/.test(
+    /(今日|明日|あした|本日|来週|再来週|今週|来月|平日|週末|土日|祝日|昼間|昼|午前|午後|夕方|夜|朝|いつでも|なるべく早く|早め|即日|\d{1,2}時|\d{1,2}:\d{2}|\d{1,2}月\d{1,2}日|\d{1,2}日)/.test(
       userText
     )
   ) {

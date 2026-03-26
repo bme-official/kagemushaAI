@@ -22,9 +22,9 @@ type VoiceControlsProps = {
   isTtsSpeaking?: boolean;
   /** 無音判定までの時間 (ms, default: 1200) */
   vadSilenceDurationMs?: number;
-  /** 発話判定RMS閾値 (default: 0.025) */
+  /** 発話判定RMS閾値 (default: 0.035) */
   vadThreshold?: number;
-  /** 発話確定に必要な連続フレーム数 (default: 4 = 約67ms) */
+  /** 発話確定に必要な連続フレーム数 (default: 8 = 約133ms) */
   vadConfirmFrames?: number;
   /** VAD のみ一時停止（ストリームは維持したままマイク入力を無効化する） */
   vadPaused?: boolean;
@@ -57,8 +57,8 @@ export const VoiceControls = ({
   mode = "overlay",
   statusLabel = "idle",
   vadSilenceDurationMs = 1200,
-  vadThreshold = 0.025,
-  vadConfirmFrames = 4,
+  vadThreshold = 0.035,
+  vadConfirmFrames = 8,
   vadPaused = false
 }: VoiceControlsProps) => {
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
@@ -108,7 +108,7 @@ export const VoiceControls = ({
     isSubmittingRef.current = true;
     try {
       const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
-      if (blob.size < 1000) return; // 1KB 未満は無音と判断してスキップ
+      if (blob.size < 3000) return; // 3KB 未満は短すぎる（雑音・咳払い）と判断してスキップ
       const form = new FormData();
       form.append("audio", blob, `audio.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
       form.append("language", "ja");
@@ -188,7 +188,7 @@ export const VoiceControls = ({
       }
       // 人声帯域のエネルギーが全体の 35% 以上なら「声らしい」と判定
       const voiceRatio = totalSum > 100 ? voiceSum / totalSum : 0;
-      const isLikelyVoice = voiceRatio >= 0.35;
+      const isLikelyVoice = voiceRatio >= 0.42;
 
       const recorder = recorderRef.current;
       if (rms > vadThreshold && isLikelyVoice) {
