@@ -80,6 +80,11 @@ export type ChatApiRequest = {
       ruby: string;
       description: string;
     }>;
+    /** ウェブサイトから取得した会社・サービス情報テキスト */
+    knowledgeBaseUrl?: string;
+    knowledgeBaseText?: string;
+    /** TTS 読み方補正リスト */
+    ttsCorrections?: Array<{ term: string; reading: string }>;
   };
   userInput?: string;
   fieldResponse?: {

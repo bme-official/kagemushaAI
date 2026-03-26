@@ -24,6 +24,7 @@ export type InquiryFieldConfig = {
 
 export const inquiryConfig = {
   inquiryIntents: [
+    "一般問い合わせ",
     "制作相談",
     "見積もり相談",
     "日程調整",

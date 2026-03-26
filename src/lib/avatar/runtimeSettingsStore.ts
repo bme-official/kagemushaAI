@@ -22,6 +22,12 @@ type RuntimeAvatarSettings = {
     ruby: string;
     description: string;
   }>;
+  /** スクレイプ元 URL */
+  knowledgeBaseUrl?: string;
+  /** ウェブサイトから取得した会社・サービス情報テキスト */
+  knowledgeBaseText?: string;
+  /** TTS 読み方補正リスト */
+  ttsCorrections?: Array<{ term: string; reading: string }>;
 };
 
 let inMemorySettings: RuntimeAvatarSettings | null = null;

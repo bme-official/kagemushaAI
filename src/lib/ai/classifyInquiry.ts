@@ -15,22 +15,39 @@ const INTENT_KEYWORD_ALIASES: Record<string, string[]> = {
   資料請求: ["資料", "パンフ", "カタログ"]
 };
 
+/**
+ * 具体的な意図が分からなくても「連絡・問い合わせをしたい」と明確に示す汎用キーワード。
+ * マッチした場合は inferredIntent = "一般問い合わせ" として連絡先収集を開始する。
+ */
+const GENERIC_INQUIRY_KEYWORDS = [
+  "問い合わせ", "お問い合わせ", "連絡したい", "連絡がしたい",
+  "相談したい", "相談がしたい", "お願いしたい", "聞きたい",
+  "教えてほしい", "教えていただきたい", "確認したい", "知りたい",
+  "申し込みたい", "申込みたい"
+];
+
 /** このインテントが確定したら連絡先収集フローを開始する（一般的な質問は除外） */
 const CONTACT_REQUIRED_INTENTS = [
-  "制作相談", "見積もり相談", "日程調整", "業務提携", "導入相談", "資料請求", "打ち合わせ希望"
+  "制作相談", "見積もり相談", "日程調整", "業務提携", "導入相談",
+  "資料請求", "打ち合わせ希望", "一般問い合わせ"
 ];
 
 export const classifyInquiry = ({ userText }: ClassificationInput) => {
   const text = userText.toLowerCase();
 
   // まずエイリアスキーワードで判定し、次にインテント名直接マッチにフォールバック
-  const inferredIntent =
+  let inferredIntent: string | null =
     (Object.entries(INTENT_KEYWORD_ALIASES).find(([, keywords]) =>
       keywords.some((kw) => text.includes(kw))
     )?.[0] ?? null) ||
     (inquiryConfig.inquiryIntents.find((intent) =>
       text.includes(intent.replace("相談", "").toLowerCase())
     ) ?? null);
+
+  // 具体的な意図が取れなくても「問い合わせしたい」等の汎用キーワードがあれば一般問い合わせとして扱う
+  if (!inferredIntent && GENERIC_INQUIRY_KEYWORDS.some((kw) => text.includes(kw))) {
+    inferredIntent = "一般問い合わせ";
+  }
 
   const inferredCategory =
     companyConfig.businessCategories.find((category) =>
@@ -54,7 +71,7 @@ export const classifyInquiry = ({ userText }: ClassificationInput) => {
     );
 
   const shouldCollectContact = inferredIntent
-    ? CONTACT_REQUIRED_INTENTS.some((intent) => inferredIntent.includes(intent))
+    ? CONTACT_REQUIRED_INTENTS.some((intent) => inferredIntent!.includes(intent))
     : false;
 
   return {

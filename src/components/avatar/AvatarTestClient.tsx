@@ -112,6 +112,13 @@ export const AvatarTestClient = () => {
   const [voiceState, setVoiceState] = useState<AvatarVoiceState>("muted");
   const [previewBehavior, setPreviewBehavior] = useState<AvatarBehaviorState>(idleBehavior);
   const [saveMessage, setSaveMessage] = useState("");
+  // 知識ベース
+  const [knowledgeBaseUrl, setKnowledgeBaseUrl] = useState("");
+  const [knowledgeBaseText, setKnowledgeBaseText] = useState("");
+  const [scrapeLoading, setScrapeLoading] = useState(false);
+  const [scrapeMessage, setScrapeMessage] = useState("");
+  // TTS 読み方補正
+  const [ttsCorrections, setTtsCorrections] = useState<Array<{ term: string; reading: string }>>([]);
   const activeUrl = customUrl.trim() || selectedUrl;
 
   const applySettingsPayload = useCallback((parsed: {
@@ -126,6 +133,9 @@ export const AvatarTestClient = () => {
     services?: ServiceItem[];
     statuses?: string[];
     statusMappings?: Record<string, StatusMapping>;
+    knowledgeBaseUrl?: string;
+    knowledgeBaseText?: string;
+    ttsCorrections?: Array<{ term: string; reading: string }>;
   }) => {
     if (parsed.modelUrl) {
       if (candidates.includes(parsed.modelUrl)) {
@@ -145,6 +155,9 @@ export const AvatarTestClient = () => {
     if (parsed.services?.length) setServices(parsed.services.slice(0, 10));
     if (parsed.statuses?.length) setStatuses(parsed.statuses);
     if (parsed.statusMappings) setStatusMappings(parsed.statusMappings);
+    if (parsed.knowledgeBaseUrl) setKnowledgeBaseUrl(parsed.knowledgeBaseUrl);
+    if (parsed.knowledgeBaseText) setKnowledgeBaseText(parsed.knowledgeBaseText);
+    if (parsed.ttsCorrections) setTtsCorrections(parsed.ttsCorrections);
   }, [candidates]);
 
   const handleVoicePreview = useCallback(async () => {
@@ -253,7 +266,10 @@ export const AvatarTestClient = () => {
       profile,
       services,
       statuses,
-      statusMappings
+      statusMappings,
+      knowledgeBaseUrl,
+      knowledgeBaseText,
+      ttsCorrections: ttsCorrections.filter((c) => c.term && c.reading)
     };
     window.localStorage.setItem(
       "kagemusha-avatar-settings",
@@ -570,6 +586,125 @@ export const AvatarTestClient = () => {
               />
               <button type="button" onClick={() => removeService(index)} disabled={services.length <= 1}>
                 削除
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* 知識ベース */}
+        <div style={{ display: "grid", gap: 10, borderTop: "1px solid #e2e8f0", paddingTop: 16, marginTop: 8 }}>
+          <label style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>知識ベース</label>
+          <span style={{ fontSize: 12, color: "#64748b" }}>
+            会社・サービスのウェブサイト URL を入力すると、AIが内容を参照して回答できるようになります。
+          </span>
+          <div style={{ display: "grid", gap: 6 }}>
+            <label style={{ fontSize: 13, color: "#334155" }}>URL から読み込む</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                placeholder="https://example.com"
+                value={knowledgeBaseUrl}
+                onChange={(e) => setKnowledgeBaseUrl(e.target.value)}
+                style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                disabled={scrapeLoading || !knowledgeBaseUrl.trim()}
+                onClick={async () => {
+                  setScrapeLoading(true);
+                  setScrapeMessage("");
+                  try {
+                    const res = await fetch("/api/scrape", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ url: knowledgeBaseUrl.trim() })
+                    });
+                    const data = (await res.json()) as { text?: string; error?: string };
+                    if (data.text) {
+                      setKnowledgeBaseText(data.text);
+                      setScrapeMessage(`読み込み完了（${data.text.length.toLocaleString()}文字）`);
+                    } else {
+                      setScrapeMessage(data.error ?? "読み込みに失敗しました");
+                    }
+                  } catch {
+                    setScrapeMessage("ネットワークエラーが発生しました");
+                  } finally {
+                    setScrapeLoading(false);
+                  }
+                }}
+                style={{
+                  border: "1px solid #0f172a",
+                  borderRadius: 8,
+                  background: scrapeLoading ? "#64748b" : "#0f172a",
+                  color: "#fff",
+                  padding: "8px 14px",
+                  fontSize: 13,
+                  cursor: scrapeLoading ? "not-allowed" : "pointer",
+                  whiteSpace: "nowrap"
+                }}
+              >
+                {scrapeLoading ? "読み込み中..." : "読み込む"}
+              </button>
+            </div>
+            {scrapeMessage && (
+              <span style={{ fontSize: 12, color: scrapeMessage.includes("完了") ? "#16a34a" : "#dc2626" }}>
+                {scrapeMessage}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "grid", gap: 6 }}>
+            <label style={{ fontSize: 13, color: "#334155" }}>テキスト（手動入力・補足）</label>
+            <textarea
+              rows={6}
+              placeholder="会社・サービスの詳細情報をここに貼り付けることもできます"
+              value={knowledgeBaseText}
+              onChange={(e) => setKnowledgeBaseText(e.target.value)}
+              style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "8px 10px", fontSize: 12, lineHeight: 1.6 }}
+            />
+          </div>
+        </div>
+
+        {/* TTS 読み方補正 */}
+        <div style={{ display: "grid", gap: 10, borderTop: "1px solid #e2e8f0", paddingTop: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <label style={{ fontSize: 14, fontWeight: 700, color: "#1e293b" }}>読み方補正</label>
+              <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>
+                読み方が違う単語を修正できます
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTtsCorrections((prev) => [...prev, { term: "", reading: "" }])}
+              style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: "pointer" }}
+            >
+              ＋ 追加
+            </button>
+          </div>
+          {ttsCorrections.length === 0 && (
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>補正なし（右上の「＋ 追加」で行を追加）</span>
+          )}
+          {ttsCorrections.map((correction, index) => (
+            <div key={index} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                placeholder="単語（例: B'Me）"
+                value={correction.term}
+                onChange={(e) => setTtsCorrections((prev) => prev.map((c, i) => i === index ? { ...c, term: e.target.value } : c))}
+                style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "7px 10px", fontSize: 13 }}
+              />
+              <span style={{ color: "#94a3b8", fontSize: 14 }}>→</span>
+              <input
+                placeholder="読み方（例: びーみー）"
+                value={correction.reading}
+                onChange={(e) => setTtsCorrections((prev) => prev.map((c, i) => i === index ? { ...c, reading: e.target.value } : c))}
+                style={{ flex: 1, border: "1px solid #cbd5e1", borderRadius: 8, padding: "7px 10px", fontSize: 13 }}
+              />
+              <button
+                type="button"
+                onClick={() => setTtsCorrections((prev) => prev.filter((_, i) => i !== index))}
+                style={{ border: "none", background: "none", color: "#dc2626", cursor: "pointer", fontSize: 16, padding: "0 4px" }}
+                aria-label="削除"
+              >
+                ×
               </button>
             </div>
           ))}

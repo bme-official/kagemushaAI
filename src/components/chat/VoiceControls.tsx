@@ -1,47 +1,8 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { voiceConfig } from "@/config/voice.config";
 import { MicIcon, SpeakerIcon } from "@/components/chat/VoiceIcons";
-
-type SpeechRecognitionAlternativeLike = {
-  transcript: string;
-};
-
-type SpeechRecognitionResultLike = {
-  [index: number]: SpeechRecognitionAlternativeLike;
-  isFinal?: boolean;
-};
-
-type SpeechRecognitionEventLike = Event & {
-  resultIndex?: number;
-  results: {
-    length: number;
-    [index: number]: SpeechRecognitionResultLike;
-  };
-};
-
-type BrowserSpeechRecognition = {
-  lang: string;
-  interimResults: boolean;
-  maxAlternatives: number;
-  continuous?: boolean;
-  onstart?: (() => void) | null;
-  onspeechstart?: (() => void) | null;
-  onspeechend?: (() => void) | null;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((event?: { error?: string }) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-};
-
-type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
-
-type SpeechWindow = Window & {
-  SpeechRecognition?: SpeechRecognitionConstructor;
-  webkitSpeechRecognition?: SpeechRecognitionConstructor;
-};
 
 type VoiceControlsProps = {
   disabled?: boolean;
@@ -55,8 +16,25 @@ type VoiceControlsProps = {
   onUserInteraction?: () => void;
   mode?: "overlay" | "inline";
   statusLabel?: string;
-  /** iOS TTS再生中フラグ: true の間はマイクを停止してエコーを防ぐ */
+  /** AECにより不要になったが後方互換のため残す */
   isTtsSpeaking?: boolean;
+  /** 無音判定までの時間 (ms, default: 1200) */
+  vadSilenceDurationMs?: number;
+  /** 発話判定RMS閾値 (default: 0.018) */
+  vadThreshold?: number;
+};
+
+/** MediaRecorder でサポートされている MIME type を選ぶ */
+const getSupportedMimeType = (): string => {
+  if (typeof MediaRecorder === "undefined") return "";
+  const types = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a",
+    "audio/mp4",
+    "audio/ogg;codecs=opus"
+  ];
+  return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 };
 
 export const VoiceControls = ({
@@ -71,269 +49,230 @@ export const VoiceControls = ({
   onUserInteraction,
   mode = "overlay",
   statusLabel = "idle",
-  isTtsSpeaking = false
+  vadSilenceDurationMs = 1200,
+  vadThreshold = 0.018
 }: VoiceControlsProps) => {
-  const [isSpeechDetected, setIsSpeechDetected] = useState(false);
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const shouldKeepListeningRef = useRef(false);
-  // onstart が発火したかどうかのフラグ。発火しないまま onend が来たら許可ダイアログ後の失敗と判定
-  const recognitionStartedRef = useRef(false);
-  // TTS 再生中に一時停止したかどうかのフラグ（エコー対策）
-  const suppressedForTtsRef = useRef(false);
-  const restartTimeoutRef = useRef<number | null>(null);
-  const speechIdleTimeoutRef = useRef<number | null>(null);
 
-  // iOS Safari では recognition.start() をユーザージェスチャー内で同期的に呼ぶ必要がある。
-  // useMemo で初期評価（SSR時は false）。
-  const isIOS = useMemo(() => {
-    if (typeof navigator === "undefined") return false;
-    return /iphone|ipad|ipod/i.test(navigator.userAgent);
-  }, []);
-
-  // コールバック ref: recognition が古いクロージャを保持しても常に最新版を呼ぶ
-  // （再レンダーで session が更新された handleVoiceTranscript を確実に使用する）
+  // コールバックを ref で保持し、stale closure を防ぐ
   const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic });
   useEffect(() => {
     callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange, onToggleMic };
   });
 
-  const hasSpeechRecognition = useMemo(() => {
-    if (typeof window === "undefined") return false;
-    const speechWindow = window as SpeechWindow;
-    return Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition);
+  const micEnabledRef = useRef(micEnabled);
+  const disabledRef = useRef(disabled);
+  useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
+  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+
+  // --- Audio pipeline refs ---
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const speechActiveRef = useRef(false);
+  const silenceTimerRef = useRef<number | null>(null);
+  const vadRafRef = useRef<number | null>(null);
+  const isSubmittingRef = useRef(false);
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
   }, []);
 
-  const clearRestartTimer = () => {
-    if (restartTimeoutRef.current !== null) {
-      window.clearTimeout(restartTimeoutRef.current);
-      restartTimeoutRef.current = null;
+  const stopVAD = useCallback(() => {
+    if (vadRafRef.current !== null) {
+      cancelAnimationFrame(vadRafRef.current);
+      vadRafRef.current = null;
     }
-  };
+  }, []);
 
-  const clearSpeechIdleTimer = () => {
-    if (speechIdleTimeoutRef.current !== null) {
-      window.clearTimeout(speechIdleTimeoutRef.current);
-      speechIdleTimeoutRef.current = null;
-    }
-  };
-
-  const markSpeechDetected = () => {
-    setIsSpeechDetected(true);
-    callbacksRef.current.onSpeechDetectedChange?.(true);
-    clearSpeechIdleTimer();
-    speechIdleTimeoutRef.current = window.setTimeout(() => {
-      setIsSpeechDetected(false);
-      callbacksRef.current.onSpeechDetectedChange?.(false);
-      speechIdleTimeoutRef.current = null;
-    }, 400);
-  };
-
-  // 雑音と判定しないよう、実際の発話テキストが取得されてから親に通知する（TTSを止める）
-  const confirmSpeechDetected = () => {
-    setIsSpeechDetected(true);
-    callbacksRef.current.onSpeechDetectedChange?.(true);
-    clearSpeechIdleTimer();
-    speechIdleTimeoutRef.current = window.setTimeout(() => {
-      setIsSpeechDetected(false);
-      callbacksRef.current.onSpeechDetectedChange?.(false);
-      speechIdleTimeoutRef.current = null;
-    }, 400);
-  };
-
-  const startListening = () => {
-    setUnsupportedMessage("");
-    if (!hasSpeechRecognition) {
-      setUnsupportedMessage("このブラウザは音声入力に対応していません。");
-      return;
-    }
-    const speechWindow = window as SpeechWindow;
-    const Recognition =
-      speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
-    if (!Recognition) {
-      setUnsupportedMessage("このブラウザは音声入力に対応していません。");
-      return;
-    }
-    // 既存インスタンスが残っている場合は明示的に停止してから再生成する
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    }
-    // continuous:true にすることで onend からの再起動（ジェスチャー要件あり）を避ける。
-    // iOS でも continuous:true を使用し、セッションが自然に終了した場合のみ onend で再起動する。
-    const recognition = new Recognition();
-    recognition.lang = voiceConfig.locale;
-    recognition.interimResults = true; // 暫定テキストで雑音と実発話を区別
-    recognition.maxAlternatives = 1;
-    recognition.continuous = true; // iOS 含め continuous:true（再起動頻度を減らす）
-    // 新しいセッション開始時にリセット（onend で onstart 未発火を検出するため）
-    recognitionStartedRef.current = false;
-    recognition.onstart = () => {
-      recognitionStartedRef.current = true;
-      setUnsupportedMessage("");
-      callbacksRef.current.onListeningChange?.(true);
-    };
-    recognition.onspeechstart = () => {
-      // onspeechstart は雑音でも発火するため、ローカルの視覚表示のみ更新
-      // 親コンポーネント（TTS停止）への通知は実テキスト取得後に行う
-      setIsSpeechDetected(true);
-      clearSpeechIdleTimer();
-    };
-    recognition.onspeechend = () => {
-      // 発話終了直後のブツ切れ感を避けるため、少し余韻を残して停止
-      clearSpeechIdleTimer();
-      speechIdleTimeoutRef.current = window.setTimeout(() => {
-        setIsSpeechDetected(false);
-        callbacksRef.current.onSpeechDetectedChange?.(false);
-        speechIdleTimeoutRef.current = null;
-      }, 120);
-    };
-
-    recognition.onresult = (event) => {
-      const results = event?.results;
-      if (!results) return;
-      // 新しく届いた結果のみ処理（resultIndex から末尾まで）
-      const startIdx = event.resultIndex ?? Math.max(0, results.length - 1);
-      for (let i = startIdx; i < results.length; i++) {
-        const result = results[i];
-        const transcript = result?.[0]?.transcript?.trim() ?? "";
-        if (!transcript) continue;
-        if (!result.isFinal) {
-          // 暫定テキストあり = 実際の発話を確認 → TTS停止を親に通知
-          confirmSpeechDetected();
-        } else {
-          // 確定テキスト = 常に最新の onTranscript を呼ぶ（stale closure を避けるため ref 経由）
-          markSpeechDetected();
-          callbacksRef.current.onTranscript(transcript);
-        }
-      }
-    };
-    recognition.onerror = (event) => {
-      clearSpeechIdleTimer();
-      setIsSpeechDetected(false);
-      callbacksRef.current.onListeningChange?.(false);
-      callbacksRef.current.onSpeechDetectedChange?.(false);
-      const err = event?.error;
-      if (err === "not-allowed" || err === "audio-capture") {
-        // 明確なパーミッション拒否 → 再試行しない
-        shouldKeepListeningRef.current = false;
-        setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
-      } else if (err === "service-not-allowed") {
-        // iOS: ジェスチャー外で呼ばれた or 許可ダイアログ後に認識が開始できなかった。
-        // マイクを OFF に戻して再タップを促す。
-        shouldKeepListeningRef.current = false;
-        callbacksRef.current.onToggleMic(false);
-        setUnsupportedMessage("マイクボタンをもう一度タップしてください。");
-      }
-      // network / aborted / no-speech などは onend で再起動される
-    };
-    recognition.onend = () => {
-      clearSpeechIdleTimer();
-      setIsSpeechDetected(false);
-      callbacksRef.current.onListeningChange?.(false);
-      callbacksRef.current.onSpeechDetectedChange?.(false);
-      if (suppressedForTtsRef.current) return; // TTS 抑制中は再起動しない
-      if (shouldKeepListeningRef.current && !disabled) {
-        // onstart が発火しないまま onend が来た = 許可ダイアログ後に認識が開始されなかったケース
-        // ジェスチャー文脈が失われているため自動再起動できない。マイクを OFF にして再タップを促す。
-        if (!recognitionStartedRef.current) {
-          shouldKeepListeningRef.current = false;
-          callbacksRef.current.onToggleMic(false);
-          setUnsupportedMessage("マイクボタンをもう一度タップしてください。");
-          return;
-        }
-        clearRestartTimer();
-        const restartDelay = /iphone|ipad|ipod/i.test(navigator.userAgent) ? 300 : 80;
-        restartTimeoutRef.current = window.setTimeout(() => {
-          startListening();
-        }, restartDelay);
-      }
-    };
-
-    recognitionRef.current = recognition;
+  /** 録音チャンクを Whisper に送信してトランスクリプトを取得 */
+  const submitAudio = useCallback(async (chunks: Blob[], mimeType: string) => {
+    if (chunks.length === 0 || isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
     try {
-      recognition.start();
-    } catch {
-      setUnsupportedMessage("マイクを開始できませんでした。もう一度お試しください。");
-      onListeningChange?.(false);
+      const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
+      if (blob.size < 1000) return; // 1KB 未満は無音と判断してスキップ
+      const form = new FormData();
+      form.append("audio", blob, `audio.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
+      form.append("language", "ja");
+      const res = await fetch("/api/stt", { method: "POST", body: form });
+      if (!res.ok) return;
+      const data = (await res.json()) as { transcript?: string };
+      const text = (data.transcript ?? "").trim();
+      if (text) {
+        callbacksRef.current.onTranscript(text);
+      }
+    } catch (err) {
+      console.warn("[VoiceControls] STT error:", err);
+    } finally {
+      isSubmittingRef.current = false;
     }
-  };
+  }, []);
 
-  const stopListening = () => {
-    clearRestartTimer();
-    clearSpeechIdleTimer();
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+  /** 発話が終わったとき (無音1.2秒後) に呼ばれる */
+  const onSpeechEnd = useCallback(() => {
+    speechActiveRef.current = false;
+    callbacksRef.current.onSpeechDetectedChange?.(false);
+
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state === "recording") {
+      const mimeType = recorder.mimeType;
+      recorder.onstop = () => {
+        const captured = [...chunksRef.current];
+        chunksRef.current = [];
+        submitAudio(captured, mimeType);
+      };
+      recorder.stop();
     }
-    setIsSpeechDetected(false);
-    onListeningChange?.(false);
-    onSpeechDetectedChange?.(false);
-  };
+  }, [submitAudio]);
 
+  /** VAD ループ: RAF で約60fps のポーリング */
+  const startVADLoop = useCallback(() => {
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    const bufferLength = analyser.fftSize;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const loop = () => {
+      if (!micEnabledRef.current || disabledRef.current) return;
+      analyser.getByteTimeDomainData(dataArray);
+
+      // RMS を計算
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const x = (dataArray[i] - 128) / 128;
+        sum += x * x;
+      }
+      const rms = Math.sqrt(sum / bufferLength);
+
+      const recorder = recorderRef.current;
+      if (rms > vadThreshold) {
+        // 発話中
+        clearSilenceTimer();
+        if (!speechActiveRef.current) {
+          speechActiveRef.current = true;
+          callbacksRef.current.onSpeechDetectedChange?.(true);
+          // 新規録音セッション開始
+          chunksRef.current = [];
+          if (recorder && recorder.state === "inactive") {
+            try { recorder.start(); } catch { /* ignore */ }
+          }
+        }
+      } else if (speechActiveRef.current && silenceTimerRef.current === null) {
+        // 無音開始 → タイマーセット
+        silenceTimerRef.current = window.setTimeout(() => {
+          silenceTimerRef.current = null;
+          onSpeechEnd();
+        }, vadSilenceDurationMs);
+      }
+
+      vadRafRef.current = requestAnimationFrame(loop);
+    };
+
+    vadRafRef.current = requestAnimationFrame(loop);
+  }, [vadThreshold, vadSilenceDurationMs, clearSilenceTimer, onSpeechEnd]);
+
+  /** マイクストリームを取得して AudioPipeline を構築 */
+  const startPipeline = useCallback(async () => {
+    setUnsupportedMessage("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,  // TTS のエコーを OS レベルで除去
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
+      streamRef.current = stream;
+
+      // AudioContext + AnalyserNode for VAD
+      const ctx = new AudioContext();
+      audioCtxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      // MediaRecorder
+      const mimeType = getSupportedMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorderRef.current = recorder;
+
+      callbacksRef.current.onListeningChange?.(true);
+      startVADLoop();
+    } catch (err: unknown) {
+      const error = err as { name?: string };
+      console.warn("[VoiceControls] getUserMedia error:", err);
+      if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") {
+        setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
+      } else {
+        setUnsupportedMessage("マイクを開始できませんでした。もう一度お試しください。");
+      }
+      callbacksRef.current.onToggleMic(false);
+    }
+  }, [startVADLoop]);
+
+  /** Pipeline を停止してリソースを解放 */
+  const stopPipeline = useCallback(() => {
+    stopVAD();
+    clearSilenceTimer();
+    speechActiveRef.current = false;
+
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      try { recorderRef.current.stop(); } catch { /* ignore */ }
+    }
+    recorderRef.current = null;
+    chunksRef.current = [];
+
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch { /* ignore */ }
+      audioCtxRef.current = null;
+    }
+    analyserRef.current = null;
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    callbacksRef.current.onListeningChange?.(false);
+    callbacksRef.current.onSpeechDetectedChange?.(false);
+  }, [stopVAD, clearSilenceTimer]);
+
+  // マイクON/OFF に応じて pipeline を開始・停止
   useEffect(() => {
     if (!voiceConfig.enabled || !voiceConfig.sttEnabled) return;
-    shouldKeepListeningRef.current = micEnabled && !disabled;
 
     if (micEnabled && !disabled) {
-      // iOS: recognition.start() はユーザージェスチャー内（マイクボタン onClick）で
-      // 同期的に呼ばれるため、useEffect からは呼ばない（非同期になりジェスチャー要件を満たせない）。
-      // 非 iOS はジェスチャー不要なので useEffect から自動起動する。
-      if (!isIOS) {
-        startListening();
-      }
-      // iOS の場合: マイクボタン click ハンドラで直接 startListening() を呼ぶ（後述）
+      startPipeline();
     } else {
-      // 明示的に停止するときのみ止める（クリーンアップで止めない）
-      shouldKeepListeningRef.current = false;
-      stopListening();
-    }
-    // クリーンアップで stopListening() を呼ぶと「ON になった直後」の
-    // React エフェクト入れ替えで認識が止まってしまうため省略する。
-    // アンマウント時は別途専用エフェクトで止める。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micEnabled, disabled, isIOS]);
-
-  // TTS 再生中はマイクを一時停止してエコー（スピーカー音をマイクが拾う）を防ぐ
-  // PC・Android・iOS 共通（ヘッドフォン未使用時に全デバイスで発生するため）
-  useEffect(() => {
-    if (isTtsSpeaking) {
-      // TTS 開始 → 認識を一時停止
-      suppressedForTtsRef.current = true;
-      clearRestartTimer();
-      if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ignore */ }
-      }
-    } else if (suppressedForTtsRef.current) {
-      // TTS 終了 → 残響が収まるのを待ってから再開 (600ms)
-      suppressedForTtsRef.current = false;
-      if (micEnabled && !disabled) {
-        clearRestartTimer();
-        restartTimeoutRef.current = window.setTimeout(() => {
-          if (!suppressedForTtsRef.current) {
-            startListening();
-          }
-        }, 600);
-      }
+      stopPipeline();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTtsSpeaking]);
+  }, [micEnabled, disabled]);
 
-  // アンマウント時のみ停止（エフェクト入れ替え時に止まらないよう分離）
+  // アンマウント時にクリーンアップ
   useEffect(() => {
-    return () => {
-      shouldKeepListeningRef.current = false;
-      clearRestartTimer();
-      clearSpeechIdleTimer();
-      recognitionRef.current?.stop();
-      recognitionRef.current = null;
-    };
+    return () => { stopPipeline(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!voiceConfig.enabled) return null;
+
+  const isIOS = useMemo(() => {
+    if (typeof navigator === "undefined") return false;
+    return /iphone|ipad|ipod/i.test(navigator.userAgent);
+  }, []);
 
   // ステータスごとのバー色とラベル色
   const isLoading = statusLabel === "loading...";
@@ -438,16 +377,13 @@ export const VoiceControls = ({
         <button
           type="button"
           onClick={() => {
-            const newEnabled = !micEnabled;
             onUserInteraction?.();
+            // iOS は getUserMedia がジェスチャー内で呼ばれることを要求するため
+            // onClick で直接 startPipeline を呼ぶ（useEffect 経由は非同期になり失敗する）
+            const newEnabled = !micEnabled;
             onToggleMic(newEnabled);
             if (newEnabled && isIOS) {
-              shouldKeepListeningRef.current = true;
-              // iOS: recognition.start() はジェスチャー内で同期的に呼ぶ必要がある。
-              // getUserMedia().then() のような非同期コールバックではジェスチャー文脈が
-              // 失われて service-not-allowed エラーになるため、直接起動する。
-              // SpeechRecognition.start() が初回の場合は iOS が自動でマイク許可ダイアログを表示する。
-              startListening();
+              startPipeline();
             }
           }}
           disabled={disabled || !voiceConfig.sttEnabled}

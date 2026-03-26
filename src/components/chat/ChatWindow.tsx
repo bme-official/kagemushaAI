@@ -94,6 +94,14 @@ const normalizeTtsText = (text: string, settings: RuntimeAvatarSettings): string
   if (settings.avatarName && settings.avatarNameKana) {
     next = next.replaceAll(settings.avatarName, settings.avatarNameKana);
   }
+  // 管理者が設定した読み方補正リストを適用（固有名詞・専門用語の誤読を修正）
+  if (settings.ttsCorrections?.length) {
+    for (const { term, reading } of settings.ttsCorrections) {
+      if (term && reading) {
+        next = next.replaceAll(term, reading);
+      }
+    }
+  }
   return next;
 };
 
@@ -141,6 +149,9 @@ type RuntimeAvatarSettings = {
     ruby: string;
     description: string;
   }>;
+  knowledgeBaseUrl?: string;
+  knowledgeBaseText?: string;
+  ttsCorrections?: Array<{ term: string; reading: string }>;
 };
 
 const expressionOptionMap: Record<string, AvatarBehaviorState["expression"]> = {
@@ -206,7 +217,7 @@ export const ChatWindow = ({
   const [audioUnlocked, setAudioUnlocked] = useState(initialAudioUnlocked || enableVoice);
   const [openingMessageOverride, setOpeningMessageOverride] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
-  const [avatarNameDisplay, setAvatarNameDisplay] = useState(characterConfig.name);
+  const [, setAvatarNameDisplay] = useState(characterConfig.name);
   const [runtimeAvatarSettings, setRuntimeAvatarSettings] = useState<RuntimeAvatarSettings>({});
   const [avatarModelUrl, setAvatarModelUrl] = useState(avatarRuntimeConfig.modelUrl);
   const [avatarBehavior, setAvatarBehavior] = useState<AvatarBehaviorState>({
@@ -1168,7 +1179,7 @@ export const ChatWindow = ({
           onUserInteraction={unlockAudio}
           mode={viewMode === "voice" ? "overlay" : "inline"}
           statusLabel={avatarBehavior.statusLabel}
-          isTtsSpeaking={isSpeaking}
+          {/* isTtsSpeaking は AEC 導入により不要になったが後方互換で残す */}
         />
       ) : null}
 

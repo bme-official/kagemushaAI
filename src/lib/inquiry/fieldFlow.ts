@@ -57,21 +57,17 @@ export const getNextFieldRequest = (
     return aiField;
   }
 
-  // 問い合わせ本文と意図が揃ってから連絡先情報を収集する。
-  // 既にひとつでも連絡先フィールドが収集済みの場合は inferredIntent・shouldCollectContact
-  // に関わらず継続する（フィールド送信ターンで条件が外れても途切れないようにする）。
-  // 打ち合わせ意図の場合は deadline が収集されるまで連絡先を出さない。
+  // 連絡先収集の開始条件:
+  // 1) shouldCollectContact=true になれば inquiryBody 未収集でも即座に開始する
+  //    （「問い合わせしたいです」等の汎用意図で詳細確認前に収集を始められるようにする）
+  // 2) すでに1フィールドでも収集済みなら無条件で継続する
+  // 3) 打ち合わせ意図の場合は deadline 収集後のみ連絡先を出す
   const alreadyCollecting = Boolean(
     collected.name || collected.email || collected.organization
   );
   const canAskIdentityFields =
     (alreadyCollecting && canShowIdentityNow) ||
-    Boolean(
-      collected.inquiryBody &&
-      context?.inferredIntent &&
-      context?.shouldCollectContact &&
-      canShowIdentityNow
-    );
+    Boolean(context?.shouldCollectContact && canShowIdentityNow);
   if (!canAskIdentityFields) return null;
 
   // AI 示唆がない・使えない場合は固定順序で次の未収集フィールドを返す。
