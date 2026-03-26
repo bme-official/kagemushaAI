@@ -1,6 +1,13 @@
 "use client";
 
+import { useState } from "react";
+import { ChatLauncher } from "@/components/chat/ChatLauncher";
+import { ChatModal } from "@/components/chat/ChatModal";
+import { ChatWindow } from "@/components/chat/ChatWindow";
+
 export default function ContactPage() {
+  const [chatOpen, setChatOpen] = useState(false);
+
   return (
     <main>
       <h1>お問い合わせ</h1>
@@ -19,6 +26,11 @@ export default function ContactPage() {
         </form>
       </section>
 
+      <ChatLauncher onClick={() => setChatOpen(true)} />
+
+      <ChatModal open={chatOpen} onClose={() => setChatOpen(false)}>
+        <ChatWindow onClose={() => setChatOpen(false)} />
+      </ChatModal>
     </main>
   );
 }
