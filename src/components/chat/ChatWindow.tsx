@@ -517,6 +517,8 @@ export const ChatWindow = ({
         // iOS Safari で inline 再生するために必須
         audio.setAttribute("playsinline", "");
         audio.setAttribute("webkit-playsinline", "");
+        // 再生速度を少し上げてテンポよく聞こえるようにする
+        audio.playbackRate = 1.25;
         // スピーカーミュート状態を反映（モバイルデフォルトOFF: 音は出ないが読み上げは実行）
         audio.muted = speakerMutedRef.current;
         apiAudioRef.current = audio;
@@ -781,15 +783,14 @@ export const ChatWindow = ({
             : "idle";
 
     // 表示ラベルは4状態のみ（感情ステータスは非表示・内部適用のみ）
+    // マイクがONでも声を検知していない間は idle を表示し、実際に話し始めたら listening に切り替える
     const fallbackStatusLabel = isSpeechDetected
       ? "listening..."
       : isSpeaking
         ? "speaking..."
         : isLoading
           ? "thinking..."
-          : isListening
-            ? "listening..."
-            : "idle";
+          : "idle";
 
     const fallbackPose: AvatarBehaviorState["pose"] = isSpeechDetected
       ? "leanForward"

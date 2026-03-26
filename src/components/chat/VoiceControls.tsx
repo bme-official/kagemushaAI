@@ -297,9 +297,9 @@ export const VoiceControls = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, disabled, isIOS]);
 
-  // iOS: TTS 再生中はマイクを一時停止してエコー（スピーカー音をマイクが拾う）を防ぐ
+  // TTS 再生中はマイクを一時停止してエコー（スピーカー音をマイクが拾う）を防ぐ
+  // PC・Android・iOS 共通（ヘッドフォン未使用時に全デバイスで発生するため）
   useEffect(() => {
-    if (!isIOS) return;
     if (isTtsSpeaking) {
       // TTS 開始 → 認識を一時停止
       suppressedForTtsRef.current = true;
@@ -320,7 +320,7 @@ export const VoiceControls = ({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTtsSpeaking, isIOS]);
+  }, [isTtsSpeaking]);
 
   // アンマウント時のみ停止（エフェクト入れ替え時に止まらないよう分離）
   useEffect(() => {
