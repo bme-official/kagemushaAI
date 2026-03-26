@@ -26,6 +26,8 @@ type VoiceControlsProps = {
   vadThreshold?: number;
   /** 発話確定に必要な連続フレーム数 (default: 4 = 約67ms) */
   vadConfirmFrames?: number;
+  /** VAD のみ一時停止（ストリームは維持したままマイク入力を無効化する） */
+  vadPaused?: boolean;
 };
 
 /** MediaRecorder でサポートされている MIME type を選ぶ */
@@ -56,7 +58,8 @@ export const VoiceControls = ({
   statusLabel = "idle",
   vadSilenceDurationMs = 1200,
   vadThreshold = 0.025,
-  vadConfirmFrames = 4
+  vadConfirmFrames = 4,
+  vadPaused = false
 }: VoiceControlsProps) => {
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
 
@@ -68,8 +71,10 @@ export const VoiceControls = ({
 
   const micEnabledRef = useRef(micEnabled);
   const disabledRef = useRef(disabled);
+  const vadPausedRef = useRef(vadPaused);
   useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+  useEffect(() => { vadPausedRef.current = vadPaused; }, [vadPaused]);
 
   // --- Audio pipeline refs ---
   const streamRef = useRef<MediaStream | null>(null);
@@ -145,51 +150,67 @@ export const VoiceControls = ({
     }
   }, [submitAudio]);
 
-  /** VAD ループ: RAF で約60fps のポーリング */
+  /** VAD ループ: RAF で約60fps のポーリング（RMS + 周波数分析で音声を判別） */
   const startVADLoop = useCallback(() => {
     const analyser = analyserRef.current;
     if (!analyser) return;
     const bufferLength = analyser.fftSize;
-    const dataArray = new Uint8Array(bufferLength);
+    const timeArray = new Uint8Array(bufferLength);
+    const freqArray = new Uint8Array(analyser.frequencyBinCount); // 周波数ビン
 
     const loop = () => {
-      if (!micEnabledRef.current || disabledRef.current) return;
-      analyser.getByteTimeDomainData(dataArray);
+      if (!micEnabledRef.current || disabledRef.current || vadPausedRef.current) {
+        vadRafRef.current = requestAnimationFrame(loop); // 停止せず待機ループ継続
+        return;
+      }
 
-      // RMS を計算
+      // --- 1. RMS（音量）計算 ---
+      analyser.getByteTimeDomainData(timeArray);
       let sum = 0;
       for (let i = 0; i < bufferLength; i++) {
-        const x = (dataArray[i] - 128) / 128;
+        const x = (timeArray[i] - 128) / 128;
         sum += x * x;
       }
       const rms = Math.sqrt(sum / bufferLength);
 
+      // --- 2. 周波数分析（人声帯域 300〜3500Hz のエネルギー比率）---
+      analyser.getByteFrequencyData(freqArray);
+      const sampleRate = audioCtxRef.current?.sampleRate ?? 44100;
+      const binWidth = sampleRate / analyser.fftSize;
+      const voiceLow = Math.floor(300 / binWidth);
+      const voiceHigh = Math.ceil(3500 / binWidth);
+      let voiceSum = 0;
+      let totalSum = 0;
+      for (let i = 0; i < freqArray.length; i++) {
+        const e = freqArray[i];
+        totalSum += e;
+        if (i >= voiceLow && i <= voiceHigh) voiceSum += e;
+      }
+      // 人声帯域のエネルギーが全体の 35% 以上なら「声らしい」と判定
+      const voiceRatio = totalSum > 100 ? voiceSum / totalSum : 0;
+      const isLikelyVoice = voiceRatio >= 0.35;
+
       const recorder = recorderRef.current;
-      if (rms > vadThreshold) {
-        // 発話候補: 連続フレーム数をカウント
+      if (rms > vadThreshold && isLikelyVoice) {
+        // 発話候補: 連続フレームをカウント（瞬間的な物音・咳払いを除外）
         speechConfirmCountRef.current++;
         clearSilenceTimer();
         if (!speechActiveRef.current && speechConfirmCountRef.current >= vadConfirmFrames) {
-          // N フレーム連続してthresholdを超えた場合のみ発話開始とみなす（雑音を除外）
           speechActiveRef.current = true;
           callbacksRef.current.onSpeechDetectedChange?.(true);
-          // 新規録音セッション開始
           chunksRef.current = [];
           if (recorder && recorder.state === "inactive") {
             try { recorder.start(); } catch { /* ignore */ }
           }
-        } else if (speechActiveRef.current) {
-          // 既に発話中なら何もしない
         }
       } else if (speechActiveRef.current && silenceTimerRef.current === null) {
-        // 無音開始 → タイマーセット
+        // 無音（または非音声）開始 → タイマーセット
         speechConfirmCountRef.current = 0;
         silenceTimerRef.current = window.setTimeout(() => {
           silenceTimerRef.current = null;
           onSpeechEnd();
         }, vadSilenceDurationMs);
       } else if (!speechActiveRef.current) {
-        // 発話開始前の無音 → 確認カウントをリセット
         speechConfirmCountRef.current = 0;
       }
 
@@ -217,8 +238,8 @@ export const VoiceControls = ({
       audioCtxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      analyser.smoothingTimeConstant = 0.3;
+      analyser.fftSize = 1024; // 周波数解像度向上（bin幅≈43Hz）
+      analyser.smoothingTimeConstant = 0.35;
       source.connect(analyser);
       analyserRef.current = analyser;
 
@@ -282,6 +303,27 @@ export const VoiceControls = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, disabled]);
+
+  // vadPaused 変化時: true になったら進行中の録音を中断して状態をリセット（ストリームは維持）
+  useEffect(() => {
+    if (!vadPaused) return;
+    clearSilenceTimer();
+    speechConfirmCountRef.current = 0;
+    if (speechActiveRef.current) {
+      speechActiveRef.current = false;
+      callbacksRef.current.onSpeechDetectedChange?.(false);
+      callbacksRef.current.onSpeechProcessingChange?.(false);
+      // 録音中なら停止（チャンクは破棄）
+      const recorder = recorderRef.current;
+      if (recorder && recorder.state === "recording") {
+        recorder.onstop = () => { chunksRef.current = []; };
+        try { recorder.stop(); } catch { /* ignore */ }
+      } else {
+        chunksRef.current = [];
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vadPaused, clearSilenceTimer]);
 
   // アンマウント時にクリーンアップ
   useEffect(() => {

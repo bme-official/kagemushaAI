@@ -437,10 +437,8 @@ export const ChatWindow = ({
 
   useEffect(() => {
     if (isEmbedVisible) return;
-    // モーダルを閉じたらマイク・スピーカー・TTS をすべて停止する
-    setMicEnabled(false);
-    setSpeakerMuted(true);
-    speakerMutedRef.current = true;
+    // モーダルを閉じたら TTS のみ停止・状態をリセット（マイク/スピーカー設定は維持）
+    // VAD 停止は vadPaused={!isEmbedVisible} を VoiceControls に渡すことで処理する
     setIsSpeaking(false);
     setIsVoiceProcessing(false);
     setIsSpeechDetected(false);
@@ -1178,7 +1176,8 @@ export const ChatWindow = ({
 
       {enableVoice ? (
         <VoiceControls
-          disabled={!isEmbedVisible}
+          disabled={isLoading}
+          vadPaused={!isEmbedVisible}
           onTranscript={handleVoiceTranscript}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}
