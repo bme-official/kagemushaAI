@@ -332,6 +332,8 @@ export async function POST(request: NextRequest) {
     if (aiCollected) {
       for (const [key, val] of Object.entries(aiCollected)) {
         if (val !== null && val !== undefined && val !== "") {
+          // 修正モード中は inquiryBody を AI が上書きしない（修正前の内容を保持）
+          if (wantsToEdit && key === "inquiryBody") continue;
           (workingSession.collectedFields as Record<string, unknown>)[key] = val;
         }
       }
@@ -427,6 +429,10 @@ export async function POST(request: NextRequest) {
     workingSession.phase === "confirming"
       ? buildFallbackReply(undefined, workingSession.collectedFields, finalNextFieldRequest)
       : (aiResult?.reply ?? buildFallbackReply(userText, workingSession.collectedFields, finalNextFieldRequest));
+  // 修正モード: 修正対象フィールドを直接聞く（AI が混乱して別の内容を返すのを防ぐ）
+  if (wantsToEdit && effectiveNextFieldRequest && effectiveNextFieldRequest.fieldName !== "confirmSubmit") {
+    assistantTextRaw = `かしこまりました。では新しい${effectiveNextFieldRequest.label}を教えていただけますか？`;
+  }
   if (
     workingSession.phase !== "confirming" &&
     shouldAskDeadlineFirst &&
