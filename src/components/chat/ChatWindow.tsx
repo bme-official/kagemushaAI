@@ -1179,7 +1179,6 @@ export const ChatWindow = ({
           onUserInteraction={unlockAudio}
           mode={viewMode === "voice" ? "overlay" : "inline"}
           statusLabel={avatarBehavior.statusLabel}
-          {/* isTtsSpeaking は AEC 導入により不要になったが後方互換で残す */}
         />
       ) : null}
 
