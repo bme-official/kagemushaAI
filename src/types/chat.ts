@@ -53,6 +53,8 @@ export type ChatSessionState = {
   summaryDraft: string;
   messages: ConversationMessage[];
   collectedFields: CollectedContactFields;
+  /** 一度でも連絡先収集が必要と判断されたら completed まで true を保持 */
+  shouldCollectContact?: boolean;
 };
 
 export type ChatApiRequest = {

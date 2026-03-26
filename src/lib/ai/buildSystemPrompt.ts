@@ -55,20 +55,20 @@ export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings)
       });
   }
 
-  // 設定済みサービスのみ使用。未設定の場合はハードコードを使わず「未設定」として案内する
+  // 設定済みサービスのみ使用。未設定の場合はハードコードを使わず問い合わせへ誘導する
   const configuredServices = runtimeAvatarSettings?.services?.filter((s) => s.name) ?? [];
   const serviceLines = configuredServices.length
     ? configuredServices.map((s) =>
         `  - ${s.name}${s.ruby ? `（${s.ruby}）` : ""}${s.description ? `: ${s.description}` : ""}`
       ).join("\n")
-    : "  - （サービス未設定：詳細はお問い合わせください）";
+    : "  - （サービス未設定）";
 
   // 説明文：設定済みサービスがある場合は services から生成。未設定なら汎用文のみ（ハードコード不使用）
   const description = runtimeAvatarSettings?.profile
     ? runtimeAvatarSettings.profile
     : configuredServices.length
       ? `${runtimeCompanyName}では${configuredServices.map((s) => s.name).join("、")}を提供しています。`
-      : `${runtimeCompanyName}のサポート窓口です。詳細はお問い合わせください。`;
+      : `${runtimeCompanyName}のサポート窓口です。`;
 
   // 知識ベーステキスト（4000文字でトリム）
   const knowledgeBaseSection = runtimeAvatarSettings?.knowledgeBaseText
@@ -99,8 +99,10 @@ ${knowledgeBaseSection}
 【最重要ルール】「提供サービス・事業」に列挙された内容だけが正確なサービス情報です。
 - 説明文・過去の学習データ・その他のいかなる情報源よりも、この一覧を最優先する
 - 一覧にないサービスは存在しないものとして扱い、絶対に言及しない
-- 一覧が空の場合のみ「詳細はお問い合わせください」と案内する
 - 【会社・事業詳細情報】がある場合は、それを参照して具体的に答える
+- サービス一覧が「（サービス未設定）」の場合: ユーザーの質問に対して「詳細はお問い合わせください」とだけ答えるのではなく、
+  「詳しくはお問い合わせいただけますか？」と一言添えてから、ユーザーが何か具体的な相談・質問があれば問い合わせフォームへ誘導する。
+  同じ返答を繰り返してはならない。2回以上同じ趣旨を言った場合は「よろしければお名前とご連絡先を教えていただけますか？」と問い合わせ収集を開始する。
 
 アバター設定(ユーザー編集内容):
 ${runtimeLines.length ? runtimeLines.join("\n") : "- 未設定(デフォルト設定で応答)"}

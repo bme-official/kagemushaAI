@@ -184,6 +184,7 @@ export async function POST(request: NextRequest) {
     workingSession.inferredIntent = null;
     workingSession.inferredCategory = null;
     workingSession.summaryDraft = "";
+    workingSession.shouldCollectContact = false;
     // 表示用メッセージはフォーム入力行のみ除去して保持（ユーザーが履歴を見返せる）
     workingSession.messages = workingSession.messages.filter((m) => {
       if (m.role !== "user") return true;
@@ -268,6 +269,10 @@ export async function POST(request: NextRequest) {
     workingSession.phase === "confirming" ||
     /送信|保存|この内容|以上|確定|提出|登録/.test(latestText) ||
     resultFromRule.shouldCollectContact;
+  // 一度でも shouldCollectContact が true になったらセッションに記録し、以降も保持する
+  if (shouldCollectContact) {
+    workingSession.shouldCollectContact = true;
+  }
   workingSession.inferredIntent = workingSession.inferredIntent ?? resultFromRule.inferredIntent;
   workingSession.inferredCategory =
     workingSession.inferredCategory ?? resultFromRule.inferredCategory;
@@ -361,12 +366,14 @@ export async function POST(request: NextRequest) {
     workingSession.collectedFields.organization
   );
   const CONTACT_COLLECTION_INTENTS = [
-    "制作相談", "見積もり相談", "日程調整", "業務提携", "導入相談", "資料請求", "打ち合わせ希望"
+    "一般問い合わせ", "問い合わせ", "相談", "制作相談", "見積もり相談",
+    "日程調整", "業務提携", "導入相談", "資料請求", "打ち合わせ希望"
   ];
   const intentWarrantsContact = workingSession.inferredIntent
     ? CONTACT_COLLECTION_INTENTS.some((intent) => workingSession.inferredIntent!.includes(intent))
     : false;
   const finalShouldCollectContact =
+    Boolean(workingSession.shouldCollectContact) ||
     shouldCollectContact ||
     intentWarrantsContact ||
     contactFieldsStarted;
