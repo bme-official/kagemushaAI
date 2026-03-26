@@ -14,6 +14,9 @@ type RuntimeAvatarSettings = {
     ruby: string;
     description: string;
   }>;
+  knowledgeBaseUrl?: string;
+  knowledgeBaseText?: string;
+  ttsCorrections?: Array<{ term: string; reading: string }>;
 };
 
 export const buildSystemPrompt = (runtimeAvatarSettings?: RuntimeAvatarSettings): string => {
