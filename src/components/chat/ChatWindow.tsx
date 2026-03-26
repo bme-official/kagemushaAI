@@ -1173,6 +1173,7 @@ export const ChatWindow = ({
         <VoiceControls
           disabled={isLoading}
           vadPaused={!isEmbedVisible}
+          isTtsSpeaking={isSpeaking}
           onTranscript={handleVoiceTranscript}
           micEnabled={micEnabled}
           onToggleMic={setMicEnabled}

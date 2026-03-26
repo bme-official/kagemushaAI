@@ -12,35 +12,15 @@ type VoiceControlsProps = {
   ttsEnabled: boolean;
   onToggleTts: (enabled: boolean) => void;
   onListeningChange?: (listening: boolean) => void;
-  onSpeechDetectedChange?: (speaking: boolean) => void;
-  /** 発話終了後STT送信中に呼ばれる（listening→thinkingの即時切り替え用） */
+  onSpeechDetectedChange?: (detected: boolean) => void;
   onSpeechProcessingChange?: (processing: boolean) => void;
   onUserInteraction?: () => void;
+  /** TTS再生中フラグ: true の間は SpeechRecognition を停止し VAD のみ動かす */
+  isTtsSpeaking?: boolean;
   mode?: "overlay" | "inline";
   statusLabel?: string;
-  /** AECにより不要になったが後方互換のため残す */
-  isTtsSpeaking?: boolean;
-  /** 無音判定までの時間 (ms, default: 1200) */
-  vadSilenceDurationMs?: number;
-  /** 発話判定RMS閾値 (default: 0.035) */
-  vadThreshold?: number;
-  /** 発話確定に必要な連続フレーム数 (default: 8 = 約133ms) */
-  vadConfirmFrames?: number;
   /** VAD のみ一時停止（ストリームは維持したままマイク入力を無効化する） */
   vadPaused?: boolean;
-};
-
-/** MediaRecorder でサポートされている MIME type を選ぶ */
-const getSupportedMimeType = (): string => {
-  if (typeof MediaRecorder === "undefined") return "";
-  const types = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/mp4;codecs=mp4a",
-    "audio/mp4",
-    "audio/ogg;codecs=opus"
-  ];
-  return types.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
 };
 
 export const VoiceControls = ({
@@ -54,16 +34,13 @@ export const VoiceControls = ({
   onSpeechDetectedChange,
   onSpeechProcessingChange,
   onUserInteraction,
+  isTtsSpeaking = false,
   mode = "overlay",
   statusLabel = "idle",
-  vadSilenceDurationMs = 1200,
-  vadThreshold = 0.035,
-  vadConfirmFrames = 8,
   vadPaused = false
 }: VoiceControlsProps) => {
   const [unsupportedMessage, setUnsupportedMessage] = useState("");
 
-  // コールバックを ref で保持し、stale closure を防ぐ
   const callbacksRef = useRef({ onTranscript, onListeningChange, onSpeechDetectedChange, onSpeechProcessingChange, onToggleMic });
   useEffect(() => {
     callbacksRef.current = { onTranscript, onListeningChange, onSpeechDetectedChange, onSpeechProcessingChange, onToggleMic };
@@ -71,261 +48,234 @@ export const VoiceControls = ({
 
   const micEnabledRef = useRef(micEnabled);
   const disabledRef = useRef(disabled);
+  const isTtsSpeakingRef = useRef(isTtsSpeaking);
   const vadPausedRef = useRef(vadPaused);
   useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
   useEffect(() => { disabledRef.current = disabled; }, [disabled]);
+  useEffect(() => { isTtsSpeakingRef.current = isTtsSpeaking; }, [isTtsSpeaking]);
   useEffect(() => { vadPausedRef.current = vadPaused; }, [vadPaused]);
 
-  // --- Audio pipeline refs ---
+  // SpeechRecognition refs
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+  const recognitionActiveRef = useRef(false);
+  const restartTimerRef = useRef<number | null>(null);
+  const ttsEndTimerRef = useRef<number | null>(null);
+  const speechDetectedRef = useRef(false);
+
+  // RMS VAD refs (TTS中ユーザー音声検知専用)
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const speechActiveRef = useRef(false);
-  const silenceTimerRef = useRef<number | null>(null);
   const vadRafRef = useRef<number | null>(null);
-  const isSubmittingRef = useRef(false);
-  const speechConfirmCountRef = useRef(0); // 連続してthreshold超えたフレーム数（雑音除去）
+  const vadCountRef = useRef(0);
 
-  const clearSilenceTimer = useCallback(() => {
-    if (silenceTimerRef.current !== null) {
-      window.clearTimeout(silenceTimerRef.current);
-      silenceTimerRef.current = null;
-    }
+  const clearTimers = useCallback(() => {
+    if (restartTimerRef.current !== null) { window.clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
+    if (ttsEndTimerRef.current !== null) { window.clearTimeout(ttsEndTimerRef.current); ttsEndTimerRef.current = null; }
   }, []);
 
-  const stopVAD = useCallback(() => {
-    if (vadRafRef.current !== null) {
-      cancelAnimationFrame(vadRafRef.current);
-      vadRafRef.current = null;
+  // ==========================
+  // SpeechRecognition
+  // ==========================
+  const stopRecognition = useCallback(() => {
+    clearTimers();
+    if (recognitionRef.current) {
+      recognitionActiveRef.current = false;
+      try { recognitionRef.current.abort(); } catch { /* ignore */ }
+      recognitionRef.current = null;
     }
-  }, []);
+  }, [clearTimers]);
 
-  /** 録音チャンクを Whisper に送信してトランスクリプトを取得 */
-  const submitAudio = useCallback(async (chunks: Blob[], mimeType: string): Promise<void> => {
-    if (chunks.length === 0 || isSubmittingRef.current) return;
-    isSubmittingRef.current = true;
-    try {
-      const blob = new Blob(chunks, { type: mimeType || "audio/webm" });
-      if (blob.size < 3000) return; // 3KB 未満は短すぎる（雑音・咳払い）と判断してスキップ
-      const form = new FormData();
-      form.append("audio", blob, `audio.${mimeType.includes("mp4") ? "mp4" : "webm"}`);
-      form.append("language", "ja");
-      const res = await fetch("/api/stt", { method: "POST", body: form });
-      if (!res.ok) return;
-      const data = (await res.json()) as { transcript?: string };
-      const text = (data.transcript ?? "").trim();
-      if (text) {
-        callbacksRef.current.onTranscript(text);
-      }
-    } catch (err) {
-      console.warn("[VoiceControls] STT error:", err);
-    } finally {
-      isSubmittingRef.current = false;
+  const startRecognition = useCallback(() => {
+    if (recognitionActiveRef.current) return;
+    if (!micEnabledRef.current || disabledRef.current || vadPausedRef.current || isTtsSpeakingRef.current) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const w = typeof window !== "undefined" ? (window as unknown as any) : null;
+    const Ctor = w ? (w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null) : null;
+    if (!Ctor) {
+      setUnsupportedMessage("このブラウザは音声入力に対応していません。");
+      return;
     }
-  }, []);
 
-  /** 発話が終わったとき (無音後) に呼ばれる */
-  const onSpeechEnd = useCallback(() => {
-    speechActiveRef.current = false;
-    speechConfirmCountRef.current = 0;
-    callbacksRef.current.onSpeechDetectedChange?.(false);
-    // STT送信開始を通知 → listening から thinking へ即時切り替え
-    callbacksRef.current.onSpeechProcessingChange?.(true);
+    const rec = new Ctor();
+    rec.lang = "ja-JP";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 1;
 
-    const recorder = recorderRef.current;
-    if (recorder && recorder.state === "recording") {
-      const mimeType = recorder.mimeType;
-      recorder.onstop = () => {
-        const captured = [...chunksRef.current];
-        chunksRef.current = [];
-        submitAudio(captured, mimeType).finally(() => {
-          callbacksRef.current.onSpeechProcessingChange?.(false);
-        });
-      };
-      recorder.stop();
-    } else {
-      callbacksRef.current.onSpeechProcessingChange?.(false);
-    }
-  }, [submitAudio]);
-
-  /** VAD ループ: RAF で約60fps のポーリング（RMS + 周波数分析で音声を判別） */
-  const startVADLoop = useCallback(() => {
-    const analyser = analyserRef.current;
-    if (!analyser) return;
-    const bufferLength = analyser.fftSize;
-    const timeArray = new Uint8Array(bufferLength);
-    const freqArray = new Uint8Array(analyser.frequencyBinCount); // 周波数ビン
-
-    const loop = () => {
-      if (!micEnabledRef.current || disabledRef.current || vadPausedRef.current) {
-        vadRafRef.current = requestAnimationFrame(loop); // 停止せず待機ループ継続
-        return;
-      }
-
-      // --- 1. RMS（音量）計算 ---
-      analyser.getByteTimeDomainData(timeArray);
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        const x = (timeArray[i] - 128) / 128;
-        sum += x * x;
-      }
-      const rms = Math.sqrt(sum / bufferLength);
-
-      // --- 2. 周波数分析（人声帯域 300〜3500Hz のエネルギー比率）---
-      analyser.getByteFrequencyData(freqArray);
-      const sampleRate = audioCtxRef.current?.sampleRate ?? 44100;
-      const binWidth = sampleRate / analyser.fftSize;
-      const voiceLow = Math.floor(300 / binWidth);
-      const voiceHigh = Math.ceil(3500 / binWidth);
-      let voiceSum = 0;
-      let totalSum = 0;
-      for (let i = 0; i < freqArray.length; i++) {
-        const e = freqArray[i];
-        totalSum += e;
-        if (i >= voiceLow && i <= voiceHigh) voiceSum += e;
-      }
-      // 人声帯域のエネルギーが全体の 35% 以上なら「声らしい」と判定
-      const voiceRatio = totalSum > 100 ? voiceSum / totalSum : 0;
-      const isLikelyVoice = voiceRatio >= 0.42;
-
-      const recorder = recorderRef.current;
-      if (rms > vadThreshold && isLikelyVoice) {
-        // 発話候補: 連続フレームをカウント（瞬間的な物音・咳払いを除外）
-        speechConfirmCountRef.current++;
-        clearSilenceTimer();
-        if (!speechActiveRef.current && speechConfirmCountRef.current >= vadConfirmFrames) {
-          speechActiveRef.current = true;
-          callbacksRef.current.onSpeechDetectedChange?.(true);
-          chunksRef.current = [];
-          if (recorder && recorder.state === "inactive") {
-            try { recorder.start(); } catch { /* ignore */ }
-          }
-        }
-      } else if (speechActiveRef.current && silenceTimerRef.current === null) {
-        // 無音（または非音声）開始 → タイマーセット
-        speechConfirmCountRef.current = 0;
-        silenceTimerRef.current = window.setTimeout(() => {
-          silenceTimerRef.current = null;
-          onSpeechEnd();
-        }, vadSilenceDurationMs);
-      } else if (!speechActiveRef.current) {
-        speechConfirmCountRef.current = 0;
-      }
-
-      vadRafRef.current = requestAnimationFrame(loop);
+    rec.onspeechstart = () => {
+      if (isTtsSpeakingRef.current) return;
+      speechDetectedRef.current = true;
+      callbacksRef.current.onSpeechDetectedChange?.(true);
     };
 
-    vadRafRef.current = requestAnimationFrame(loop);
-  }, [vadThreshold, vadSilenceDurationMs, vadConfirmFrames, clearSilenceTimer, onSpeechEnd]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (event: any) => {
+      if (isTtsSpeakingRef.current) return;
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          const text = result[0].transcript.trim();
+          if (text) {
+            speechDetectedRef.current = false;
+            callbacksRef.current.onSpeechDetectedChange?.(false);
+            callbacksRef.current.onTranscript(text);
+          }
+        }
+      }
+    };
 
-  /** マイクストリームを取得して AudioPipeline を構築 */
-  const startPipeline = useCallback(async () => {
-    setUnsupportedMessage("");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (event: any) => {
+      recognitionActiveRef.current = false;
+      speechDetectedRef.current = false;
+      callbacksRef.current.onSpeechDetectedChange?.(false);
+      if (event.error === "not-allowed" || event.error === "permission-denied") {
+        setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
+        callbacksRef.current.onToggleMic(false);
+        return;
+      }
+      if (micEnabledRef.current && !disabledRef.current && !isTtsSpeakingRef.current && !vadPausedRef.current) {
+        restartTimerRef.current = window.setTimeout(() => { restartTimerRef.current = null; startRecognition(); }, 300);
+      }
+    };
+
+    rec.onend = () => {
+      recognitionActiveRef.current = false;
+      speechDetectedRef.current = false;
+      callbacksRef.current.onSpeechDetectedChange?.(false);
+      if (micEnabledRef.current && !disabledRef.current && !isTtsSpeakingRef.current && !vadPausedRef.current) {
+        restartTimerRef.current = window.setTimeout(() => { restartTimerRef.current = null; startRecognition(); }, 100);
+      }
+    };
+
+    try {
+      rec.start();
+      recognitionRef.current = rec;
+      recognitionActiveRef.current = true;
+      callbacksRef.current.onListeningChange?.(true);
+    } catch (err) {
+      console.warn("[VoiceControls] recognition.start error:", err);
+      recognitionActiveRef.current = false;
+    }
+  }, [clearTimers]);
+
+  // ==========================
+  // RMS VAD（TTS中専用）
+  // ==========================
+  const stopVAD = useCallback(() => {
+    if (vadRafRef.current !== null) { cancelAnimationFrame(vadRafRef.current); vadRafRef.current = null; }
+    if (audioCtxRef.current) { try { audioCtxRef.current.close(); } catch { /* ignore */ } audioCtxRef.current = null; }
+    analyserRef.current = null;
+    if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+  }, []);
+
+  const startVAD = useCallback(async () => {
+    if (streamRef.current) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,  // TTS のエコーを OS レベルで除去
-          noiseSuppression: true,
-          autoGainControl: true
-        }
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       streamRef.current = stream;
-
-      // AudioContext + AnalyserNode for VAD
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 1024; // 周波数解像度向上（bin幅≈43Hz）
-      analyser.smoothingTimeConstant = 0.35;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.25;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // MediaRecorder
-      const mimeType = getSupportedMimeType();
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
+      const data = new Uint8Array(analyser.fftSize);
+      const THRESH = 0.03;
+      const FRAMES = 5;
+
+      const loop = () => {
+        if (!micEnabledRef.current) return;
+        vadRafRef.current = requestAnimationFrame(loop);
+        if (vadPausedRef.current || !isTtsSpeakingRef.current) { vadCountRef.current = 0; return; }
+
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) { const x = (data[i] - 128) / 128; sum += x * x; }
+        const rms = Math.sqrt(sum / data.length);
+
+        if (rms > THRESH) {
+          vadCountRef.current++;
+          if (vadCountRef.current >= FRAMES) {
+            vadCountRef.current = 0;
+            callbacksRef.current.onSpeechDetectedChange?.(true);
+          }
+        } else {
+          vadCountRef.current = Math.max(0, vadCountRef.current - 1);
+        }
       };
-      recorderRef.current = recorder;
-
-      callbacksRef.current.onListeningChange?.(true);
-      startVADLoop();
-    } catch (err: unknown) {
-      const error = err as { name?: string };
-      console.warn("[VoiceControls] getUserMedia error:", err);
-      if (error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError") {
-        setUnsupportedMessage("マイク権限が許可されていません。ブラウザ設定をご確認ください。");
-      } else {
-        setUnsupportedMessage("マイクを開始できませんでした。もう一度お試しください。");
-      }
-      callbacksRef.current.onToggleMic(false);
+      vadRafRef.current = requestAnimationFrame(loop);
+    } catch (err) {
+      console.warn("[VoiceControls] VAD stream error:", err);
     }
-  }, [startVADLoop]);
+  }, []);
 
-  /** Pipeline を停止してリソースを解放 */
+  // ==========================
+  // Pipeline 開始・停止
+  // ==========================
+  const startPipeline = useCallback(async () => {
+    setUnsupportedMessage("");
+    await startVAD();
+    startRecognition();
+  }, [startVAD, startRecognition]);
+
   const stopPipeline = useCallback(() => {
+    stopRecognition();
     stopVAD();
-    clearSilenceTimer();
-    speechActiveRef.current = false;
-
-    if (recorderRef.current && recorderRef.current.state !== "inactive") {
-      try { recorderRef.current.stop(); } catch { /* ignore */ }
-    }
-    recorderRef.current = null;
-    chunksRef.current = [];
-
-    if (audioCtxRef.current) {
-      try { audioCtxRef.current.close(); } catch { /* ignore */ }
-      audioCtxRef.current = null;
-    }
-    analyserRef.current = null;
-
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-
+    speechDetectedRef.current = false;
     callbacksRef.current.onListeningChange?.(false);
     callbacksRef.current.onSpeechDetectedChange?.(false);
-  }, [stopVAD, clearSilenceTimer]);
+  }, [stopRecognition, stopVAD]);
 
-  // マイクON/OFF に応じて pipeline を開始・停止
+  // マイク ON/OFF
   useEffect(() => {
     if (!voiceConfig.enabled || !voiceConfig.sttEnabled) return;
-
-    if (micEnabled && !disabled) {
-      startPipeline();
-    } else {
-      stopPipeline();
-    }
+    if (micEnabled && !disabled) { startPipeline(); } else { stopPipeline(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, disabled]);
 
-  // vadPaused 変化時: true になったら進行中の録音を中断して状態をリセット（ストリームは維持）
+  // TTS 状態変化
   useEffect(() => {
-    if (!vadPaused) return;
-    clearSilenceTimer();
-    speechConfirmCountRef.current = 0;
-    if (speechActiveRef.current) {
-      speechActiveRef.current = false;
-      callbacksRef.current.onSpeechDetectedChange?.(false);
-      callbacksRef.current.onSpeechProcessingChange?.(false);
-      // 録音中なら停止（チャンクは破棄）
-      const recorder = recorderRef.current;
-      if (recorder && recorder.state === "recording") {
-        recorder.onstop = () => { chunksRef.current = []; };
-        try { recorder.stop(); } catch { /* ignore */ }
-      } else {
-        chunksRef.current = [];
+    if (!voiceConfig.enabled || !voiceConfig.sttEnabled) return;
+    if (isTtsSpeaking) {
+      stopRecognition();
+      vadCountRef.current = 0;
+    } else {
+      if (micEnabledRef.current && !disabledRef.current && !vadPausedRef.current) {
+        ttsEndTimerRef.current = window.setTimeout(() => {
+          ttsEndTimerRef.current = null;
+          callbacksRef.current.onSpeechDetectedChange?.(false);
+          startRecognition();
+        }, 250);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vadPaused, clearSilenceTimer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTtsSpeaking]);
 
-  // アンマウント時にクリーンアップ
+  // vadPaused 変化
+  useEffect(() => {
+    if (!voiceConfig.enabled || !voiceConfig.sttEnabled) return;
+    if (vadPaused) {
+      stopRecognition();
+      speechDetectedRef.current = false;
+      callbacksRef.current.onSpeechDetectedChange?.(false);
+    } else {
+      if (micEnabledRef.current && !disabledRef.current && !isTtsSpeakingRef.current) {
+        startRecognition();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vadPaused]);
+
+  // アンマウント
   useEffect(() => {
     return () => { stopPipeline(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -338,12 +288,10 @@ export const VoiceControls = ({
 
   if (!voiceConfig.enabled) return null;
 
-  // ステータスごとのバー色とラベル色
   const isLoading = statusLabel === "loading...";
   const isListening = statusLabel === "listening...";
   const isThinking = statusLabel === "thinking...";
   const isSpeaking = statusLabel === "speaking...";
-
   const barColor = isListening ? "#22c55e" : isSpeaking ? "#3b82f6" : "#94a3b8";
   const labelColor = isListening ? "#16a34a" : isSpeaking ? "#2563eb" : "#94a3b8";
 
@@ -352,170 +300,33 @@ export const VoiceControls = ({
       const heights = [8, 14, 10];
       const duration = isListening ? 650 : 580;
       const stagger = isListening ? 90 : 75;
-      return {
-        width: 4,
-        borderRadius: 999,
-        height: heights[idx],
-        background: barColor,
-        transformOrigin: "bottom center",
-        animation: `kagemushaBarBounce ${duration}ms ease-in-out ${idx * stagger}ms infinite alternate`
-      };
+      return { width: 4, borderRadius: 999, height: heights[idx], background: barColor, transformOrigin: "bottom center", animation: `kagemushaBarBounce ${duration}ms ease-in-out ${idx * stagger}ms infinite alternate` };
     }
     if (isThinking || isLoading) {
-      return {
-        width: 4,
-        borderRadius: 999,
-        height: 7,
-        background: "#94a3b8",
-        transformOrigin: "center",
-        animation: `kagemushaBarThink 1.4s ease-in-out ${idx * 380}ms infinite`
-      };
+      return { width: 4, borderRadius: 999, height: 7, background: "#94a3b8", transformOrigin: "center", animation: `kagemushaBarThink 1.4s ease-in-out ${idx * 380}ms infinite` };
     }
-    // idle
-    return {
-      width: 4,
-      borderRadius: 999,
-      height: [8, 12, 9][idx],
-      background: "#cbd5e1",
-      transition: "all 200ms ease"
-    };
+    return { width: 4, borderRadius: 999, height: [8, 12, 9][idx], background: "#cbd5e1", transition: "all 200ms ease" };
   };
 
   return (
-    <div
-      style={{
-        position: mode === "overlay" ? "absolute" : "relative",
-        left: mode === "overlay" ? 12 : undefined,
-        right: mode === "overlay" ? 12 : undefined,
-        bottom: mode === "overlay" ? 12 : undefined,
-        zIndex: mode === "overlay" ? 20 : undefined,
-        padding: mode === "inline" ? "10px 12px" : "8px 12px",
-        borderTop: mode === "inline" ? "1px solid #e2e8f0" : undefined,
-        borderRadius: mode === "overlay" ? 12 : 0,
-        background: mode === "overlay" ? "rgba(255,255,255,0.92)" : "#ffffff",
-        backdropFilter: mode === "overlay" ? "blur(6px)" : undefined,
-        display: "grid",
-        gridTemplateColumns: "1fr auto 1fr",
-        alignItems: "center",
-        gap: 8
-      }}
-    >
-      {/* 左：ステータスラベル */}
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          color: labelColor,
-          letterSpacing: "0.02em",
-          transition: "color 200ms ease",
-          whiteSpace: "nowrap"
-        }}
-      >
-        {statusLabel}
-      </span>
-
-      {/* 中央：3本バー */}
-      <div
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 5,
-          height: 20
-        }}
-      >
-        {[0, 1, 2].map((idx) => (
-          <span key={idx} style={getBarStyle(idx)} />
-        ))}
+    <div style={{ position: mode === "overlay" ? "absolute" : "relative", left: mode === "overlay" ? 12 : undefined, right: mode === "overlay" ? 12 : undefined, bottom: mode === "overlay" ? 12 : undefined, zIndex: mode === "overlay" ? 20 : undefined, padding: mode === "inline" ? "10px 12px" : "8px 12px", borderTop: mode === "inline" ? "1px solid #e2e8f0" : undefined, borderRadius: mode === "overlay" ? 12 : 0, background: mode === "overlay" ? "rgba(255,255,255,0.92)" : "#ffffff", backdropFilter: mode === "overlay" ? "blur(6px)" : undefined, display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: labelColor, letterSpacing: "0.02em", transition: "color 200ms ease", whiteSpace: "nowrap" }}>{statusLabel}</span>
+      <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, height: 20 }}>
+        {[0, 1, 2].map((idx) => (<span key={idx} style={getBarStyle(idx)} />))}
       </div>
-
-      {/* 右：マイク＋スピーカーボタン */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          justifyContent: "flex-end"
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => {
-            onUserInteraction?.();
-            // iOS は getUserMedia がジェスチャー内で呼ばれることを要求するため
-            // onClick で直接 startPipeline を呼ぶ（useEffect 経由は非同期になり失敗する）
-            const newEnabled = !micEnabled;
-            onToggleMic(newEnabled);
-            if (newEnabled && isIOS) {
-              startPipeline();
-            }
-          }}
-          disabled={disabled || !voiceConfig.sttEnabled}
-          aria-label="音声入力の切り替え"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 999,
-            border: "none",
-            background: "none",
-            color: micEnabled ? "#0f172a" : "#dc2626",
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer"
-          }}
-        >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+        <button type="button" onClick={() => { onUserInteraction?.(); const n = !micEnabled; onToggleMic(n); if (n && isIOS) { startPipeline(); } }} disabled={disabled || !voiceConfig.sttEnabled} aria-label="音声入力の切り替え" style={{ width: 40, height: 40, borderRadius: 999, border: "none", background: "none", color: micEnabled ? "#0f172a" : "#dc2626", display: "grid", placeItems: "center", cursor: "pointer" }}>
           <MicIcon muted={!micEnabled} />
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            onUserInteraction?.();
-            onToggleTts(!ttsEnabled);
-          }}
-          disabled={disabled || !voiceConfig.ttsEnabled}
-          aria-label="読み上げの切り替え"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 999,
-            border: "none",
-            background: "none",
-            color: ttsEnabled ? "#0f172a" : "#dc2626",
-            display: "grid",
-            placeItems: "center",
-            cursor: "pointer"
-          }}
-        >
+        <button type="button" onClick={() => { onUserInteraction?.(); onToggleTts(!ttsEnabled); }} disabled={disabled || !voiceConfig.ttsEnabled} aria-label="読み上げの切り替え" style={{ width: 40, height: 40, borderRadius: 999, border: "none", background: "none", color: ttsEnabled ? "#0f172a" : "#dc2626", display: "grid", placeItems: "center", cursor: "pointer" }}>
           <SpeakerIcon muted={!ttsEnabled} />
         </button>
       </div>
-
       <style>{`
-        @keyframes kagemushaBarBounce {
-          from { transform: scaleY(1); opacity: 0.7; }
-          to   { transform: scaleY(1.9); transform-origin: center; opacity: 1; }
-        }
-        @keyframes kagemushaBarThink {
-          0%, 100% { opacity: 0.3; background: #e2e8f0; transform: scaleY(0.7); }
-          50%       { opacity: 1;   background: #64748b; transform: scaleY(1.25); }
-        }
+        @keyframes kagemushaBarBounce { from { transform: scaleY(1); opacity: 0.7; } to { transform: scaleY(1.9); transform-origin: center; opacity: 1; } }
+        @keyframes kagemushaBarThink { 0%, 100% { opacity: 0.3; background: #e2e8f0; transform: scaleY(0.7); } 50% { opacity: 1; background: #64748b; transform: scaleY(1.25); } }
       `}</style>
-
-      {unsupportedMessage ? (
-        <span
-          style={{
-            position: "absolute",
-            left: 0,
-            right: 0,
-            bottom: 54,
-            fontSize: 12,
-            color: "#b45309",
-            textAlign: "center"
-          }}
-        >
-          {unsupportedMessage}
-        </span>
-      ) : null}
+      {unsupportedMessage ? (<span style={{ position: "absolute", left: 0, right: 0, bottom: 54, fontSize: 12, color: "#b45309", textAlign: "center" }}>{unsupportedMessage}</span>) : null}
     </div>
   );
 };
