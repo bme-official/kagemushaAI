@@ -267,12 +267,12 @@ export const VoiceControls = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!voiceConfig.enabled) return null;
-
   const isIOS = useMemo(() => {
     if (typeof navigator === "undefined") return false;
     return /iphone|ipad|ipod/i.test(navigator.userAgent);
   }, []);
+
+  if (!voiceConfig.enabled) return null;
 
   // ステータスごとのバー色とラベル色
   const isLoading = statusLabel === "loading...";
